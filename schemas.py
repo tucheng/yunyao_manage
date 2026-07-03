@@ -181,7 +181,7 @@ class WorkCommentOut(BaseModel):
     user_id: int
     content: str
     created_at: datetime
-    username: str = ""
+    nickname: str = ""
     replies: list["WorkCommentOut"] = []
 
     model_config = {"from_attributes": True}

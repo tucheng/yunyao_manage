@@ -54,7 +54,7 @@ def list_work_comments(work_id: int, db: Session = Depends(get_db)):
                 "user_id": reply.user_id,
                 "content": reply.content,
                 "created_at": reply.created_at,
-                "username": _username(reply.user_id, users),
+                "nickname": _username(reply.user_id, users),
                 "replies": [],
             })
         result.append({
@@ -64,7 +64,7 @@ def list_work_comments(work_id: int, db: Session = Depends(get_db)):
             "user_id": comment.user_id,
             "content": comment.content,
             "created_at": comment.created_at,
-            "username": _username(comment.user_id, users),
+            "nickname": _username(comment.user_id, users),
             "replies": replies,
         })
     return result
@@ -119,6 +119,6 @@ def create_work_comment(work_id: int, body: WorkCommentCreate, db: Session = Dep
         "user_id": comment.user_id,
         "content": comment.content,
         "created_at": comment.created_at,
-        "username": user.nickname if user else f"用户{body.user_id}",
+        "nickname": user.nickname if user else f"用户{body.user_id}",
         "replies": [],
     }
