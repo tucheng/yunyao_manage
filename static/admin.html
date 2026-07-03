@@ -1,0 +1,648 @@
+<!DOCTYPE html>
+<html lang="zh">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>云窑后台管理</title>
+<style>
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f3f0; color: #333; }
+.header { background: #2c3e50; color: #fff; padding: 14px 20px; display: flex; align-items: center; gap: 16px; }
+.header h1 { font-size: 18px; }
+.header .nav { display: flex; gap: 12px; margin-left: auto; }
+.header .nav a { color: #bdc3c7; text-decoration: none; font-size: 14px; cursor: pointer; padding: 4px 10px; border-radius: 4px; }
+.header .nav a:hover { color: #fff; background: rgba(255,255,255,0.1); }
+.header .nav a.active { color: #fff; background: rgba(255,255,255,0.2); }
+.container { max-width: 1200px; margin: 0 auto; padding: 20px; }
+.section { display: none; }
+.section.active { display: block; }
+.card { background: #fff; border-radius: 8px; padding: 20px; margin-bottom: 16px; box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+.card h2 { font-size: 16px; margin-bottom: 12px; }
+table { width: 100%; border-collapse: collapse; font-size: 13px; }
+th, td { padding: 10px 8px; text-align: left; border-bottom: 1px solid #eee; }
+th { background: #fafafa; font-weight: 600; font-size: 12px; color: #666; }
+tr:hover { background: #f8f8f8; }
+.btn { display: inline-flex; align-items: center; gap: 4px; padding: 6px 16px; border-radius: 6px; border: 1px solid #ddd; font-size: 13px; cursor: pointer; background: #fff; }
+.btn-primary { background: #3498db; color: #fff; border-color: #3498db; }
+.btn-danger { background: #e74c3c; color: #fff; border-color: #e74c3c; }
+.btn-sm { padding: 4px 10px; font-size: 12px; }
+.search-bar { display: flex; gap: 8px; margin-bottom: 12px; }
+.search-bar input { flex: 1; padding: 8px 12px; border: 1px solid #ddd; border-radius: 6px; font-size: 14px; }
+.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: 600; }
+.badge-free { background: #e8f5e9; color: #2e7d32; }
+.badge-paid { background: #fff3e0; color: #e65100; }
+.badge-muted { background: #fce4ec; color: #c62828; }
+.badge-admin { background: #e3f2fd; color: #1565c0; }
+.tag-muted { color: #e74c3c; font-weight: 600; font-size: 11px; }
+.modal { display: none; position: fixed; top: 0; left: 0; right: 0; bottom: 0; background: rgba(0,0,0,0.4); z-index: 100; align-items: center; justify-content: center; }
+.modal.show { display: flex; }
+.modal-content { background: #fff; border-radius: 10px; padding: 24px; width: 90%; max-width: 500px; max-height: 80vh; overflow-y: auto; }
+.modal-content h3 { margin-bottom: 16px; }
+.form-group { margin-bottom: 12px; }
+.form-group label { display: block; font-size: 13px; font-weight: 600; color: #555; margin-bottom: 4px; }
+.form-group input, .form-group select, .form-group textarea { width: 100%; padding: 8px 10px; border: 1px solid #ddd; border-radius: 6px; font-size: 13px; }
+.form-row { display: flex; gap: 12px; }
+.form-row .form-group { flex: 1; }
+.login-page { display: flex; align-items: center; justify-content: center; min-height: 100vh; }
+.login-card { background: #fff; padding: 40px; border-radius: 12px; box-shadow: 0 4px 20px rgba(0,0,0,0.1); text-align: center; }
+.login-card h2 { margin-bottom: 20px; }
+.login-card input { width: 280px; padding: 10px 14px; border: 1px solid #ddd; border-radius: 8px; font-size: 14px; margin-bottom: 12px; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; }
+.stat-card { background: #fff; border-radius: 8px; padding: 16px; text-align: center; box-shadow: 0 1px 3px rgba(0,0,0,0.08); }
+.stat-card .num { font-size: 28px; font-weight: 700; color: #2c3e50; }
+.stat-card .label { font-size: 12px; color: #888; margin-top: 4px; }
+.pagination { display: flex; align-items: center; justify-content: center; gap: 8px; margin-top: 12px; }
+.pagination span { font-size: 13px; color: #666; }
+.toast { position: fixed; top: 20px; right: 20px; padding: 12px 20px; border-radius: 8px; color: #fff; font-size: 14px; z-index: 200; display: none; }
+.toast.success { background: #27ae60; }
+.toast.error { background: #e74c3c; }
+.help { color: #777; font-size: 12px; line-height: 1.6; margin-top: 4px; }
+.settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
+.config-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+.config-table input, .config-table textarea { width: 100%; padding: 7px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; }
+.config-table textarea { min-height: 54px; resize: vertical; }
+.config-table .narrow { width: 84px; }
+</style>
+</head>
+<body>
+<div id="loginPage" class="login-page">
+  <div class="login-card">
+    <h2>🔐 云窑后台管理</h2>
+    <input type="password" id="tokenInput" placeholder="输入管理密码" onkeydown="if(event.key==='Enter')doLogin()">
+    <button class="btn btn-primary" onclick="doLogin()">登录</button>
+    <p style="color:#999;font-size:12px;margin-top:8px">管理密码来自后端 ADMIN_TOKEN 配置</p>
+  </div>
+</div>
+
+<div id="app" style="display:none">
+  <div class="header">
+    <h1>☁️ 云窑后台</h1>
+    <div class="nav">
+      <a class="active" onclick="switchTab('dashboard')">概览</a>
+      <a onclick="switchTab('users')">用户管理</a>
+      <a onclick="switchTab('levels')">等级管理</a>
+      <a onclick="switchTab('temperature-config')">温度配置</a>
+      <a onclick="switchTab('color-config')">颜色配置</a>
+      <a onclick="switchTab('verification')">验证码配置</a>
+    </div>
+  </div>
+
+  <div class="container">
+
+    <!-- 概览 -->
+    <div id="tab-dashboard" class="section active">
+      <div class="stats" id="statsContainer"></div>
+    </div>
+
+    <!-- 用户管理 -->
+    <div id="tab-users" class="section">
+      <div class="card">
+        <div class="search-bar">
+          <input id="userSearch" placeholder="搜索用户昵称..." onkeydown="if(event.key==='Enter')loadUsers()">
+          <button class="btn btn-primary" onclick="loadUsers()">搜索</button>
+        </div>
+        <table>
+          <thead><tr>
+            <th>ID</th><th>昵称</th><th>等级</th><th>配方总数</th><th>付费配方</th><th>作品数</th><th>状态</th><th>操作</th>
+          </tr></thead>
+          <tbody id="userTableBody"></tbody>
+        </table>
+        <div class="pagination" id="userPagination"></div>
+      </div>
+    </div>
+
+    <!-- 等级管理 -->
+    <div id="tab-levels" class="section">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h2>用户等级配置</h2>
+          <button class="btn btn-primary" onclick="showLevelModal()">+ 新建等级</button>
+        </div>
+        <table>
+          <thead><tr>
+            <th>ID</th><th>等级名称</th><th>可发付费</th><th>付费上限</th><th>免费上限</th><th>作品上限</th><th>用户数</th><th>操作</th>
+          </tr></thead>
+          <tbody id="levelTableBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <!-- 温度配置 -->
+    <div id="tab-temperature-config" class="section">
+      <div class="card">
+        <div class="config-toolbar">
+          <div>
+            <h2>温度范围配置</h2>
+            <div class="help">前台作品搜索的“低温 / 中温 / 高温”等范围来自这里。编码用于接口参数，保存后不要随意改已有编码。</div>
+          </div>
+          <button class="btn btn-primary" onclick="addTemperatureRow()">+ 新增温度范围</button>
+        </div>
+        <table class="config-table">
+          <thead><tr>
+            <th style="width:110px">编码</th><th style="width:110px">名称</th><th style="width:90px">最低℃</th><th style="width:90px">最高℃</th><th>说明</th><th style="width:80px">操作</th>
+          </tr></thead>
+          <tbody id="temperatureRangeTableBody"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <button class="btn btn-primary" onclick="saveTemperatureSettings()">保存温度配置</button>
+      </div>
+    </div>
+
+    <!-- 颜色配置 -->
+    <div id="tab-color-config" class="section">
+      <div class="card">
+        <div class="config-toolbar">
+          <div>
+            <h2>颜色范围配置</h2>
+            <div class="help">颜色名来自发布作品时取色后写入的 color_name 映射结果。多个颜色名用中文逗号或英文逗号分隔，如：天青、粉青、梅子青。</div>
+          </div>
+          <button class="btn btn-primary" onclick="addColorRangeRow()">+ 新增颜色范围</button>
+        </div>
+        <table class="config-table">
+          <thead><tr>
+            <th style="width:110px">编码</th><th style="width:110px">名称</th><th>包含颜色名</th><th>说明</th><th style="width:80px">操作</th>
+          </tr></thead>
+          <tbody id="colorRangeTableBody"></tbody>
+        </table>
+      </div>
+      <div class="card">
+        <button class="btn btn-primary" onclick="saveColorSettings()">保存颜色配置</button>
+      </div>
+    </div>
+
+    <!-- 验证码配置 -->
+    <div id="tab-verification" class="section">
+      <div class="card">
+        <h2>验证码发送配置</h2>
+        <div class="form-group">
+          <label>注册/登录验证方式</label>
+          <select id="verificationAccountMode">
+            <option value="sms">仅短信验证（手机号）</option>
+            <option value="email">仅邮箱验证</option>
+            <option value="either">短信或邮箱二选一</option>
+          </select>
+          <div class="help">控制前台注册、验证码登录和获取验证码时允许填写哪类账号。前期只做短信时请选择“仅短信验证”。</div>
+        </div>
+        <div class="form-group">
+          <label>启用渠道</label>
+          <select id="verificationChannel">
+            <option value="debug">开发调试（接口返回验证码）</option>
+            <option value="email">邮箱 SMTP</option>
+            <option value="sms">短信 HTTP 网关</option>
+          </select>
+          <div class="help">开发调试模式会把验证码返回给前端；上线应切换到邮箱或短信。</div>
+        </div>
+      </div>
+
+      <div class="settings-grid">
+        <div class="card">
+          <h2>邮箱 SMTP</h2>
+          <div class="form-group"><label>SMTP Host</label><input id="smtpHost" placeholder="smtp.example.com"></div>
+          <div class="form-row">
+            <div class="form-group"><label>端口</label><input id="smtpPort" placeholder="465"></div>
+            <div class="form-group"><label>SSL</label><select id="smtpUseSsl"><option value="1">启用</option><option value="0">STARTTLS</option></select></div>
+          </div>
+          <div class="form-group"><label>账号</label><input id="smtpUsername" placeholder="notice@example.com"></div>
+          <div class="form-group"><label>密码/授权码</label><input id="smtpPassword" type="password" placeholder="留空表示不修改"></div>
+          <div class="form-group"><label>发件人</label><input id="smtpFrom" placeholder="notice@example.com"></div>
+          <div class="form-group"><label>邮件标题</label><input id="emailSubject"></div>
+          <div class="form-group"><label>邮件正文模板</label><textarea id="emailBodyTemplate" rows="3"></textarea><div class="help">可用变量：{{code}}、{{email}}</div></div>
+        </div>
+
+        <div class="card">
+          <h2>短信 HTTP 网关</h2>
+          <div class="form-group"><label>接口 URL</label><input id="smsApiUrl" placeholder="https://api.example.com/send"></div>
+          <div class="form-group"><label>请求方法</label><select id="smsMethod"><option value="POST">POST</option><option value="GET">GET</option></select></div>
+          <div class="form-group"><label>Headers JSON</label><textarea id="smsHeadersJson" rows="4"></textarea></div>
+          <div class="form-group"><label>Body 模板</label><textarea id="smsBodyTemplate" rows="5"></textarea><div class="help">可用变量：{{code}}、{{phone}}。如果模板是 JSON，会按 JSON 发送。</div></div>
+        </div>
+      </div>
+
+      <div class="card">
+        <button class="btn btn-primary" onclick="saveVerificationSettings()">保存验证码配置</button>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<!-- 用户编辑弹窗 -->
+<div class="modal" id="userModal">
+  <div class="modal-content">
+    <h3 id="userModalTitle">编辑用户</h3>
+    <div class="form-group"><label>昵称</label><span id="userEditNickname" style="font-weight:600"></span></div>
+    <div class="form-group"><label>等级</label><select id="userEditLevel"></select></div>
+    <div class="form-group"><label>状态</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:normal;margin-top:4px">
+        <input type="checkbox" id="userEditMuted"> 禁言中
+      </label>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal('userModal')">取消</button>
+      <button class="btn btn-primary" onclick="saveUser()">保存</button>
+    </div>
+  </div>
+</div>
+
+<!-- 等级编辑弹窗 -->
+<div class="modal" id="levelModal">
+  <div class="modal-content">
+    <h3 id="levelModalTitle">编辑等级</h3>
+    <div class="form-group"><label>等级名称</label><input id="levelEditName"></div>
+    <div class="form-group">
+      <label style="display:flex;align-items:center;gap:8px;font-weight:normal">
+        <input type="checkbox" id="levelEditCanPaid"> 允许发布付费配方
+      </label>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>付费配方上限</label><input type="number" id="levelEditMaxPaid"></div>
+      <div class="form-group"><label>免费配方上限</label><input type="number" id="levelEditMaxFree"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>作品上限</label><input type="number" id="levelEditMaxWorks"></div>
+      <div class="form-group"><label>排序</label><input type="number" id="levelEditSort"></div>
+    </div>
+    <div class="form-group"><label>描述</label><textarea id="levelEditDesc" rows="2"></textarea></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:space-between">
+      <button class="btn btn-danger btn-sm" id="levelDeleteBtn" onclick="deleteLevel()">删除此等级</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="closeModal('levelModal')">取消</button>
+        <button class="btn btn-primary" onclick="saveLevel()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+let TOKEN = '';
+let userPage = 1;
+
+function doLogin() {
+  TOKEN = document.getElementById('tokenInput').value.trim();
+  if (!TOKEN) return;
+  fetch('/admin/stats?token=' + encodeURIComponent(TOKEN))
+    .then(r => { if (!r.ok) throw new Error('密码错误'); return r.json(); })
+    .then(d => {
+      document.getElementById('loginPage').style.display = 'none';
+      document.getElementById('app').style.display = 'block';
+      loadDashboard();
+      loadUsers();
+      loadLevels();
+      loadWorkSearchSettings();
+      loadVerificationSettings();
+    })
+    .catch(e => { alert('登录失败: ' + e.message); TOKEN = ''; });
+}
+
+function toast(msg, type='success') {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.className = 'toast ' + type; t.style.display = 'block';
+  setTimeout(() => t.style.display = 'none', 2500);
+}
+
+function api(path, opts={}) {
+  const url = path + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
+  return fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
+    .then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.detail || '请求失败'); }); return r.json(); });
+}
+
+function switchTab(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  document.querySelector('.nav a[onclick*="' + name + '"]').classList.add('active');
+  if (name === 'temperature-config' || name === 'color-config') {
+    loadWorkSearchSettings();
+  }
+}
+
+// ====== 概览 ======
+function loadDashboard() {
+  api('/admin/stats').then(d => {
+    document.getElementById('statsContainer').innerHTML = `
+      <div class="stat-card"><div class="num">${d.user_count}</div><div class="label">总用户</div></div>
+      <div class="stat-card"><div class="num">${d.recipe_count}</div><div class="label">配方总数</div></div>
+      <div class="stat-card"><div class="num">${d.paid_recipe_count}</div><div class="label">付费配方</div></div>
+      <div class="stat-card"><div class="num">${d.work_count}</div><div class="label">作品总数</div></div>
+      <div class="stat-card"><div class="num">${d.muted_count}</div><div class="label">已禁言</div></div>
+    `;
+  });
+}
+
+// ====== 用户管理 ======
+function loadUsers(p) {
+  if (p !== undefined) userPage = p;
+  const q = document.getElementById('userSearch').value;
+  api('/admin/users?page=' + userPage + '&page_size=20' + (q ? '&q=' + encodeURIComponent(q) : ''))
+    .then(d => {
+      const tbody = document.getElementById('userTableBody');
+      tbody.innerHTML = d.results.map(u => {
+        const levelBadge = u.level_name === 'VIP大师' ? 'badge-admin' : 'badge-free';
+        return `<tr>
+          <td>${u.id}</td>
+          <td><strong>${esc(u.nickname || '?')}</strong></td>
+          <td><span class="badge ${levelBadge}">${esc(u.level_name)}</span></td>
+          <td>${u.recipe_count}</td>
+          <td>${u.paid_count > 0 ? '<span class="badge badge-paid">' + u.paid_count + '</span>' : u.paid_count}</td>
+          <td>${u.work_count}</td>
+          <td>${u.is_muted ? '<span class="tag-muted">🚫 禁言</span>' : '<span style="color:#27ae60">正常</span>'}</td>
+          <td><button class="btn btn-sm" onclick="showUserModal(${u.id})">编辑</button></td>
+        </tr>`;
+      }).join('');
+      const totalPages = Math.ceil(d.total / 20);
+      document.getElementById('userPagination').innerHTML = `
+        <button class="btn btn-sm" onclick="loadUsers(${userPage-1})" ${userPage<=1?'disabled':''}>‹</button>
+        <span>第 ${d.page}/${totalPages} 页 (共 ${d.total} 人)</span>
+        <button class="btn btn-sm" onclick="loadUsers(${userPage+1})" ${userPage>=totalPages?'disabled':''}>›</button>
+      `;
+    });
+}
+
+function showUserModal(userId) {
+  api('/admin/users/' + userId).then(u => {
+    document.getElementById('userModalTitle').textContent = '编辑用户 - ' + u.nickname;
+    document.getElementById('userEditNickname').textContent = u.nickname + ' (ID:' + u.id + ')';
+    document.getElementById('userEditMuted').checked = u.is_muted;
+    const sel = document.getElementById('userEditLevel');
+    sel.innerHTML = '';
+    api('/admin/levels').then(levels => {
+      levels.forEach(l => {
+        const opt = document.createElement('option');
+        opt.value = l.id; opt.textContent = l.name;
+        if (l.id === u.level_id) opt.selected = true;
+        sel.appendChild(opt);
+      });
+    });
+    document.getElementById('userModal').dataset.userId = userId;
+    openModal('userModal');
+  });
+}
+
+function saveUser() {
+  const userId = document.getElementById('userModal').dataset.userId;
+  const data = {
+    level_id: parseInt(document.getElementById('userEditLevel').value),
+    is_muted: document.getElementById('userEditMuted').checked,
+  };
+  api('/admin/users/' + userId, {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }).then(() => {
+    toast('用户已更新');
+    closeModal('userModal');
+    loadUsers();
+  }).catch(e => toast(e.message, 'error'));
+}
+
+// ====== 等级管理 ======
+function loadLevels() {
+  api('/admin/levels').then(levels => {
+    const tbody = document.getElementById('levelTableBody');
+    tbody.innerHTML = levels.map(l => `
+      <tr>
+        <td>${l.id}</td>
+        <td><strong>${esc(l.name)}</strong></td>
+        <td>${l.can_publish_paid ? '✅' : '❌'}</td>
+        <td>${l.max_paid_recipes}</td>
+        <td>${l.max_free_recipes}</td>
+        <td>${l.max_works}</td>
+        <td>${l.user_count}</td>
+        <td><button class="btn btn-sm" onclick="showLevelModal(${l.id})">编辑</button></td>
+      </tr>
+    `).join('');
+  });
+}
+
+let editingLevelId = null;
+
+function showLevelModal(id) {
+  editingLevelId = id || null;
+  document.getElementById('levelModalTitle').textContent = id ? '编辑等级' : '新建等级';
+  document.getElementById('levelDeleteBtn').style.display = id && id <= 4 ? 'none' : 'inline-flex';
+  if (id) {
+    api('/admin/levels').then(levels => {
+      const l = levels.find(x => x.id === id);
+      if (!l) return;
+      document.getElementById('levelEditName').value = l.name;
+      document.getElementById('levelEditCanPaid').checked = l.can_publish_paid;
+      document.getElementById('levelEditMaxPaid').value = l.max_paid_recipes;
+      document.getElementById('levelEditMaxFree').value = l.max_free_recipes;
+      document.getElementById('levelEditMaxWorks').value = l.max_works;
+      document.getElementById('levelEditSort').value = l.sort_order;
+      document.getElementById('levelEditDesc').value = l.description;
+    });
+  } else {
+    document.getElementById('levelEditName').value = '';
+    document.getElementById('levelEditCanPaid').checked = false;
+    document.getElementById('levelEditMaxPaid').value = 0;
+    document.getElementById('levelEditMaxFree').value = 10;
+    document.getElementById('levelEditMaxWorks').value = 50;
+    document.getElementById('levelEditSort').value = 99;
+    document.getElementById('levelEditDesc').value = '';
+  }
+  openModal('levelModal');
+}
+
+function saveLevel() {
+  const data = {
+    name: document.getElementById('levelEditName').value,
+    can_publish_paid: document.getElementById('levelEditCanPaid').checked,
+    max_paid_recipes: parseInt(document.getElementById('levelEditMaxPaid').value) || 0,
+    max_free_recipes: parseInt(document.getElementById('levelEditMaxFree').value) || 10,
+    max_works: parseInt(document.getElementById('levelEditMaxWorks').value) || 50,
+    sort_order: parseInt(document.getElementById('levelEditSort').value) || 0,
+    description: document.getElementById('levelEditDesc').value,
+  };
+  if (!data.name) { toast('请输入等级名称', 'error'); return; }
+  const url = editingLevelId ? '/admin/levels/' + editingLevelId : '/admin/levels';
+  const method = editingLevelId ? 'PUT' : 'POST';
+  api(url, { method, body: JSON.stringify(data) })
+    .then(() => {
+      toast(editingLevelId ? '等级已更新' : '等级已创建');
+      closeModal('levelModal');
+      loadLevels();
+    }).catch(e => toast(e.message, 'error'));
+}
+
+function deleteLevel() {
+  if (!confirm('确定删除此等级？已有用户将被影响')) return;
+  api('/admin/levels/' + editingLevelId, { method: 'DELETE' })
+    .then(() => {
+      toast('等级已删除');
+      closeModal('levelModal');
+      loadLevels();
+    }).catch(e => toast(e.message, 'error'));
+}
+
+// ====== 作品搜索配置 ======
+let temperatureRanges = [];
+let colorRanges = [];
+
+function loadWorkSearchSettings() {
+  api('/admin/work-search-settings').then(s => {
+    temperatureRanges = Array.isArray(s.temperature_ranges) ? s.temperature_ranges : [];
+    colorRanges = Array.isArray(s.color_ranges) ? s.color_ranges : [];
+    renderTemperatureRanges();
+    renderColorRanges();
+  }).catch(e => toast(e.message, 'error'));
+}
+
+function renderTemperatureRanges() {
+  const tbody = document.getElementById('temperatureRangeTableBody');
+  tbody.innerHTML = temperatureRanges.map((item, idx) => `
+    <tr>
+      <td><input data-temp-field="value" data-index="${idx}" value="${escAttr(item.value || '')}" placeholder="low"></td>
+      <td><input data-temp-field="label" data-index="${idx}" value="${escAttr(item.label || '')}" placeholder="低温"></td>
+      <td><input class="narrow" type="number" data-temp-field="min" data-index="${idx}" value="${Number(item.min || 0)}"></td>
+      <td><input class="narrow" type="number" data-temp-field="max" data-index="${idx}" value="${Number(item.max || 0)}"></td>
+      <td><textarea data-temp-field="description" data-index="${idx}" placeholder="说明">${esc(item.description || '')}</textarea></td>
+      <td><button class="btn btn-danger btn-sm" onclick="removeTemperatureRow(${idx})">删除</button></td>
+    </tr>
+  `).join('');
+}
+
+function renderColorRanges() {
+  const tbody = document.getElementById('colorRangeTableBody');
+  tbody.innerHTML = colorRanges.map((item, idx) => `
+    <tr>
+      <td><input data-color-field="value" data-index="${idx}" value="${escAttr(item.value || '')}" placeholder="cyan"></td>
+      <td><input data-color-field="label" data-index="${idx}" value="${escAttr(item.label || '')}" placeholder="青色"></td>
+      <td><textarea data-color-field="names" data-index="${idx}" placeholder="天青、粉青、梅子青">${esc((item.names || []).join('、'))}</textarea></td>
+      <td><textarea data-color-field="description" data-index="${idx}" placeholder="说明">${esc(item.description || '')}</textarea></td>
+      <td><button class="btn btn-danger btn-sm" onclick="removeColorRangeRow(${idx})">删除</button></td>
+    </tr>
+  `).join('');
+}
+
+function syncWorkSearchForm() {
+  document.querySelectorAll('[data-temp-field]').forEach(el => {
+    const idx = parseInt(el.dataset.index);
+    const field = el.dataset.tempField;
+    if (!temperatureRanges[idx]) return;
+    temperatureRanges[idx][field] = field === 'min' || field === 'max' ? Number(el.value || 0) : el.value.trim();
+  });
+  document.querySelectorAll('[data-color-field]').forEach(el => {
+    const idx = parseInt(el.dataset.index);
+    const field = el.dataset.colorField;
+    if (!colorRanges[idx]) return;
+    if (field === 'names') {
+      colorRanges[idx].names = el.value.split(/[、,，\n]/).map(s => s.trim()).filter(Boolean);
+    } else {
+      colorRanges[idx][field] = el.value.trim();
+    }
+  });
+}
+
+function addTemperatureRow() {
+  syncWorkSearchForm();
+  temperatureRanges.push({ value: '', label: '', min: 0, max: 0, description: '' });
+  renderTemperatureRanges();
+}
+
+function removeTemperatureRow(idx) {
+  syncWorkSearchForm();
+  temperatureRanges.splice(idx, 1);
+  renderTemperatureRanges();
+}
+
+function addColorRangeRow() {
+  syncWorkSearchForm();
+  colorRanges.push({ value: '', label: '', names: [], description: '' });
+  renderColorRanges();
+}
+
+function removeColorRangeRow(idx) {
+  syncWorkSearchForm();
+  colorRanges.splice(idx, 1);
+  renderColorRanges();
+}
+
+function saveTemperatureSettings() {
+  saveWorkSearchSettings('温度配置已保存');
+}
+
+function saveColorSettings() {
+  saveWorkSearchSettings('颜色配置已保存');
+}
+
+function saveWorkSearchSettings(successMessage) {
+  syncWorkSearchForm();
+  if (!temperatureRanges.length) { toast('至少保留一个温度范围', 'error'); return; }
+  if (!colorRanges.length) { toast('至少保留一个颜色范围', 'error'); return; }
+
+  const data = {
+    temperature_ranges: temperatureRanges,
+    color_ranges: colorRanges,
+  };
+  api('/admin/work-search-settings', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }).then(() => {
+    toast(successMessage || '作品搜索配置已保存');
+    loadWorkSearchSettings();
+  }).catch(e => toast(e.message, 'error'));
+}
+
+// ====== 验证码配置 ======
+function loadVerificationSettings() {
+  api('/admin/verification-settings').then(s => {
+    document.getElementById('verificationAccountMode').value = s.verification_account_mode || 'either';
+    document.getElementById('verificationChannel').value = s.verification_channel || 'debug';
+    document.getElementById('smtpHost').value = s.smtp_host || '';
+    document.getElementById('smtpPort').value = s.smtp_port || '465';
+    document.getElementById('smtpUsername').value = s.smtp_username || '';
+    document.getElementById('smtpPassword').value = s.smtp_password || '';
+    document.getElementById('smtpFrom').value = s.smtp_from || '';
+    document.getElementById('smtpUseSsl').value = s.smtp_use_ssl || '1';
+    document.getElementById('emailSubject').value = s.email_subject || '云窑验证码';
+    document.getElementById('emailBodyTemplate').value = s.email_body_template || '您的验证码是 {{code}}，10分钟内有效。';
+    document.getElementById('smsApiUrl').value = s.sms_api_url || '';
+    document.getElementById('smsMethod').value = s.sms_method || 'POST';
+    document.getElementById('smsHeadersJson').value = s.sms_headers_json || '{}';
+    document.getElementById('smsBodyTemplate').value = s.sms_body_template || '{"phone":"{{phone}}","code":"{{code}}"}';
+  }).catch(e => toast(e.message, 'error'));
+}
+
+function saveVerificationSettings() {
+  const data = {
+    verification_account_mode: document.getElementById('verificationAccountMode').value,
+    verification_channel: document.getElementById('verificationChannel').value,
+    smtp_host: document.getElementById('smtpHost').value,
+    smtp_port: document.getElementById('smtpPort').value,
+    smtp_username: document.getElementById('smtpUsername').value,
+    smtp_password: document.getElementById('smtpPassword').value,
+    smtp_from: document.getElementById('smtpFrom').value,
+    smtp_use_ssl: document.getElementById('smtpUseSsl').value,
+    email_subject: document.getElementById('emailSubject').value,
+    email_body_template: document.getElementById('emailBodyTemplate').value,
+    sms_api_url: document.getElementById('smsApiUrl').value,
+    sms_method: document.getElementById('smsMethod').value,
+    sms_headers_json: document.getElementById('smsHeadersJson').value,
+    sms_body_template: document.getElementById('smsBodyTemplate').value,
+  };
+  try {
+    JSON.parse(data.sms_headers_json || '{}');
+  } catch (e) {
+    toast('Headers JSON 格式不正确', 'error');
+    return;
+  }
+  api('/admin/verification-settings', {
+    method: 'PUT',
+    body: JSON.stringify(data),
+  }).then(() => {
+    toast('验证码配置已保存');
+    loadVerificationSettings();
+  }).catch(e => toast(e.message, 'error'));
+}
+
+// ====== 通用 ======
+function openModal(id) { document.getElementById(id).classList.add('show'); }
+function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+function escAttr(s) { return esc(String(s)).replace(/"/g, '&quot;'); }
+</script>
+</body>
+</html>
