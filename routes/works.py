@@ -72,11 +72,16 @@ def following_works(
     )
     work_ids = [w.id for w in rows]
     favorited_ids = set()
+    liked_ids = set()
     if work_ids:
         for row in db.query(Favorite.work_id).filter(
             Favorite.user_id == user_id, Favorite.work_id.in_(work_ids)
         ).all():
             favorited_ids.add(row.work_id)
+        for row in db.query(Like.work_id).filter(
+            Like.user_id == user_id, Like.work_id.in_(work_ids)
+        ).all():
+            liked_ids.add(row.work_id)
 
     result = []
     for work in rows:
@@ -98,6 +103,7 @@ def following_works(
             "favorite_count": db.query(Favorite).filter(Favorite.work_id == work.id).count(),
             "is_favorited": work.id in favorited_ids,
             "likes": work.likes or 0,
+            "is_liked": work.id in liked_ids,
         })
     return result
 
@@ -406,11 +412,18 @@ def list_works(
 
     work_ids = [work.id for work, *_ in rows]
     favorited_ids = set()
+    liked_ids = set()
     if current_user_id > 0 and work_ids:
         favorited_ids = {
             row.work_id
             for row in db.query(Favorite.work_id)
             .filter(Favorite.user_id == current_user_id, Favorite.work_id.in_(work_ids))
+            .all()
+        }
+        liked_ids = {
+            row.work_id
+            for row in db.query(Like.work_id)
+            .filter(Like.user_id == current_user_id, Like.work_id.in_(work_ids))
             .all()
         }
 
