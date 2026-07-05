@@ -115,28 +115,34 @@ def _recipe_rows_with_work_counts(query):
         .group_by(Favorite.recipe_id)
         .subquery()
     )
-    # correlated subqueries: latest work's image fields per recipe
-    latest_work = (
-        query.session.query(Work)
-        .filter(Work.recipe_id == Recipe.id)
-        .order_by(Work.created_at.desc())
-        .limit(1)
-        .correlate(Recipe)
+    # latest work per recipe via window function (works on MariaDB & MySQL)
+    latest_work_subq = (
+        query.session.query(
+            Work.recipe_id,
+            Work.image,
+            Work.images,
+            func.row_number().over(
+                partition_by=Work.recipe_id,
+                order_by=Work.created_at.desc()
+            ).label("rn")
+        )
         .subquery()
     )
-    first_work_img = (
-        query.session.query(latest_work.c.image)
-        .scalar_subquery()
-    )
-    first_work_imgs = (
-        query.session.query(latest_work.c.images)
-        .scalar_subquery()
+    first_work = (
+        query.session.query(
+            latest_work_subq.c.recipe_id,
+            latest_work_subq.c.image,
+            latest_work_subq.c.images,
+        )
+        .filter(latest_work_subq.c.rn == 1)
+        .subquery()
     )
     return (
         query.outerjoin(User, Recipe.user_id == User.id)
         .outerjoin(work_counts, Recipe.id == work_counts.c.recipe_id)
         .outerjoin(fav_counts, Recipe.id == fav_counts.c.recipe_id)
-        .with_entities(Recipe, User.nickname, User.avatar, work_counts.c.work_count, first_work_img, first_work_imgs, fav_counts.c.fav_count)
+        .outerjoin(first_work, Recipe.id == first_work.c.recipe_id)
+        .with_entities(Recipe, User.nickname, User.avatar, work_counts.c.work_count, first_work.c.image, first_work.c.images, fav_counts.c.fav_count)
     )
 
 
@@ -296,19 +302,33 @@ def following_recipes(
         .group_by(Favorite.recipe_id)
         .subquery()
     )
-    # correlated subquery for latest work's images
-    latest_work = (
-        db.query(Work)
-        .filter(Work.recipe_id == Recipe.id)
-        .order_by(Work.created_at.desc())
-        .limit(1)
-        .correlate(Recipe)
+    # latest work per recipe via window function
+    subq = (
+        db.query(
+            Work.recipe_id,
+            Work.image,
+            Work.images,
+            func.row_number().over(
+                partition_by=Work.recipe_id,
+                order_by=Work.created_at.desc()
+            ).label("rn")
+        )
+        .subquery()
+    )
+    first_work = (
+        db.query(
+            subq.c.recipe_id,
+            subq.c.image,
+            subq.c.images,
+        )
+        .filter(subq.c.rn == 1)
         .subquery()
     )
     rows = (
         query.outerjoin(User, Recipe.user_id == User.id)
         .outerjoin(fav_counts, Recipe.id == fav_counts.c.recipe_id)
-        .with_entities(Recipe, User.nickname, User.avatar, latest_work.c.image, latest_work.c.images, fav_counts.c.fav_count)
+        .outerjoin(first_work, Recipe.id == first_work.c.recipe_id)
+        .with_entities(Recipe, User.nickname, User.avatar, first_work.c.image, first_work.c.images, fav_counts.c.fav_count)
         .order_by(Recipe.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
