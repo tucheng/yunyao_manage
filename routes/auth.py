@@ -187,6 +187,7 @@ def find_user(body: FindUserRequest, db: Session = Depends(get_db)):
 
 @router.post("/register")
 def register(body: RegisterRequest, db: Session = Depends(get_db)):
+    # ===== 第一步：格式校验 =====
     email = body.email.strip() if body.email else ""
     phone = body.phone.strip() if body.phone else ""
     password = body.password
@@ -203,6 +204,15 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     if password != body.confirm_password:
         raise HTTPException(status_code=400, detail="两次输入的密码不一致")
 
+    # 用户名格式：必填、2-20位
+    username = body.username.strip() if body.username else ""
+    if not username:
+        raise HTTPException(status_code=400, detail="请输入用户名")
+    if len(username) < 2 or len(username) > 20:
+        raise HTTPException(status_code=400, detail="用户名2-20个字符")
+    if not re.match(r"^[a-zA-Z0-9_\u4e00-\u9fff]+$", username):
+        raise HTTPException(status_code=400, detail="用户名只能包含中英文、数字和下划线")
+
     # 图形验证码校验
     captcha_stored = _captcha_codes.get(body.captcha_id)
     if not captcha_stored:
@@ -215,19 +225,13 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="图形验证码错误")
     _captcha_codes.pop(body.captcha_id, None)
 
+    # ===== 第二步：唯一性校验 =====
     if email and db.query(User).filter(User.email == email).first():
         raise HTTPException(status_code=400, detail="该邮箱已注册")
     if phone and db.query(User).filter(User.phone == phone).first():
         raise HTTPException(status_code=400, detail="该手机号已注册")
-
-    # 用户名处理
-    username = body.username.strip() if body.username else ""
-    if not username:
-        raise HTTPException(status_code=400, detail="请输入用户名")
     if db.query(User).filter(User.username == username).first():
         raise HTTPException(status_code=400, detail="该用户名已被使用")
-    if db.query(User).filter(User.nickname == username).first():
-        raise HTTPException(status_code=400, detail="该昵称已被使用")
 
     user = User(
         openid=f"email_{email}" if email else f"phone_{phone}",
