@@ -8,3 +8,4 @@ uploads/
 wheels/
 *.log
 login_resp.json
+Python314Libsite-packages/

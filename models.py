@@ -36,7 +36,7 @@ class Recipe(Base):
     type = Column(String(20), default="recipe")  # recipe / firing / matching
     cover = Column(String(200), default="")
     images = Column(Text, default="[]")  # JSON: 多图URL，烧制作品/找配方参考图
-    ingredients = Column(Text, default="[]")
+    ingredients_deprecated = Column("ingredients_deprecated", Text, default="[]")
     steps = Column(Text, default="[]")
     tips = Column(Text, default="")
     category = Column(String(30), default="")
@@ -60,6 +60,8 @@ class Recipe(Base):
     updated_at = Column(DateTime(timezone=True), nullable=True)  # 编辑时手动设置，不用 onupdate
 
     forked_from = Column(Integer, nullable=True)  # 二次改造来源配方ID
+    source = Column(String(20), default="")  # 来源：glazy, etc.
+    source_id = Column(String(50), default="")  # 来源原始ID
 
 
 class Purchase(Base):
@@ -201,6 +203,21 @@ class RecipeView(Base):
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
     recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RecipeIngredient(Base):
+    """配方配料表"""
+    __tablename__ = "recipe_ingredients"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, index=True)
+    recipe_no = Column(String(10), default="")
+    name = Column(String(200), nullable=False, default="")
+    name_en = Column(String(200), default="")
+    amount = Column(String(100), default="")
+    note = Column(Text)
+    is_additional = Column(Integer, default=0)  # 是否附加 0=否 1=是
+    sort_order = Column(Integer, default=0)
 
 
 class Like(Base):

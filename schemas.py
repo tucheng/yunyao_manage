@@ -8,7 +8,6 @@ class RecipeCreate(BaseModel):
     type: str = "recipe"  # recipe / firing / matching
     cover: str = ""
     images: str = "[]"
-    ingredients: str = "[]"
     steps: str = "[]"
     tips: str = ""
     category: str = ""
@@ -32,7 +31,6 @@ class RecipeUpdate(BaseModel):
     type: Optional[str] = None
     cover: Optional[str] = None
     images: Optional[str] = None
-    ingredients: Optional[str] = None
     steps: Optional[str] = None
     tips: Optional[str] = None
     category: Optional[str] = None
@@ -47,43 +45,46 @@ class RecipeUpdate(BaseModel):
     reward: Optional[int] = None
     contact: Optional[str] = None
     visibility: Optional[str] = None
-
+    forked_from: Optional[int] = None
 
 class RecipeOut(BaseModel):
     id: int
     user_id: int
     title: str
     recipe_no: Optional[str] = ""
-    type: str
-    cover: str
-    images: str
-    ingredients: str
-    steps: str
-    tips: str
-    category: str
-    temperature: str
-    atmosphere: str
-    kiln_type: str = ""
-    kiln_type_other: str = ""
-    body_material: str = ""
-    tags: str
-    price: int
-    turnaround: str
-    reward: int
-    contact: str
-    visibility: str
-    likes: int
-    sold_count: int
-    created_at: datetime
+    type: Optional[str] = "recipe"
+    cover: Optional[str] = ""
+    images: Optional[str] = "[]"
+    ingredients_deprecated: Optional[str] = "[]"
+    steps: Optional[str] = "[]"
+    tips: Optional[str] = ""
+    category: Optional[str] = ""
+    temperature: Optional[str] = ""
+    atmosphere: Optional[str] = ""
+    kiln_type: Optional[str] = ""
+    kiln_type_other: Optional[str] = ""
+    body_material: Optional[str] = ""
+    tags: Optional[str] = ""
+    price: Optional[int] = 0
+    turnaround: Optional[str] = ""
+    reward: Optional[int] = 0
+    contact: Optional[str] = ""
+    visibility: Optional[str] = "private"
+    likes: Optional[int] = 0
+    sold_count: Optional[int] = 0
+    created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     is_favorited: bool = False
     is_purchased: bool = False
     forked_from: Optional[int] = None
-    author_name: str = ""
-    rating_avg: float = 0
-    favorite_count: int = 0
-    works_count: int = 0
-    ingredient_statuses: dict = {}
+    source: Optional[str] = ""
+    source_id: Optional[str] = ""
+    author_name: Optional[str] = ""
+    rating_avg: Optional[float] = 0
+    favorite_count: Optional[int] = 0
+    works_count: Optional[int] = 0
+    is_liked: bool = False
+    ingredient_statuses: Optional[dict] = None
 
     model_config = {"from_attributes": True}
 
@@ -92,18 +93,18 @@ class RecipeListItem(BaseModel):
     id: int
     user_id: int
     title: str
-    type: str
-    cover: str
-    category: str
-    temperature: str
-    atmosphere: str = ""
-    kiln_type: str = ""
-    body_material: str = ""
-    price: int
-    reward: int
-    visibility: str
-    likes: int
-    sold_count: int
+    type: Optional[str] = "recipe"
+    cover: Optional[str] = ""
+    category: Optional[str] = ""
+    temperature: Optional[str] = ""
+    atmosphere: Optional[str] = ""
+    kiln_type: Optional[str] = ""
+    body_material: Optional[str] = ""
+    price: Optional[int] = 0
+    reward: Optional[int] = 0
+    visibility: Optional[str] = "private"
+    likes: Optional[int] = 0
+    sold_count: Optional[int] = 0
     author_name: str = ""
     recipe_no: Optional[str] = ""
     avatar: str = ""
@@ -111,6 +112,8 @@ class RecipeListItem(BaseModel):
     work_count: int = 0
     favorite_count: int = 0
     created_at: datetime
+    source: Optional[str] = ""
+    source_id: Optional[str] = ""
 
     model_config = {"from_attributes": True}
 
@@ -182,6 +185,21 @@ class WorkCommentOut(BaseModel):
     content: str
     created_at: datetime
     nickname: str = ""
+    avatar: str = ""
     replies: list["WorkCommentOut"] = []
+
+    model_config = {"from_attributes": True}
+
+
+class RecipeIngredientOut(BaseModel):
+    id: int
+    recipe_id: int
+    recipe_no: str = ""
+    name: str
+    name_en: str = ""
+    amount: str = ""
+    note: Optional[str] = None
+    is_additional: int = 0
+    sort_order: int = 0
 
     model_config = {"from_attributes": True}

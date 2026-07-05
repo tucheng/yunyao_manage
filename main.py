@@ -27,6 +27,7 @@ from routes import (
     materials,
     notifications,
     pay,
+    recipe_ingredients,
     recipes,
     settings as settings_route,
     social,
@@ -134,6 +135,7 @@ async def require_signed_user_token(request: Request, call_next):
         )
 
 
+app.include_router(recipe_ingredients.router)
 app.include_router(recipes.router)
 app.include_router(auth.router)
 app.include_router(pay.router)
@@ -167,7 +169,7 @@ class CachedStaticFiles(StaticFiles):
         await super().__call__(scope, receive, send_with_cache)
 
 
-web_dir = os.path.join(os.path.dirname(__file__), "..", "dist", "build", "h5")
+web_dir = os.path.join(os.path.dirname(__file__), "..", "yunyao_app", "dist", "build", "h5")
 if os.path.exists(web_dir):
     app.mount("/web", CachedStaticFiles(directory=web_dir, html=True), name="web")
 

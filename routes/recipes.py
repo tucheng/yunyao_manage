@@ -18,8 +18,7 @@ router = APIRouter(prefix="/recipes", tags=["釉料配方"])
 
 def generate_recipe_no(db: Session) -> str:
     """原子生成配方编号：A001→A999→B001→...→Z999→A0001→... 行锁防重"""
-    from sqlalchemy import text
-    seq = db.query(RecipeSequence).order_by(RecipeSequence.letter).first()
+    seq = db.query(RecipeSequence).order_by(RecipeSequence.letter).with_for_update().first()
     if not seq:
         seq = RecipeSequence(letter="A", counter=0, digits=3)
         db.add(seq)
@@ -60,14 +59,14 @@ def _public_recipe_query(db: Session):
 
 
 def _recipe_ingredient_names(recipe: Recipe) -> list[str]:
-    if not recipe.ingredients or recipe.ingredients == "[]":
+    if not recipe.ingredients_deprecated or recipe.ingredients_deprecated == "[]":
         return []
-    raw = recipe.ingredients
+    raw = recipe.ingredients_deprecated
     if recipe.visibility == "paid":
         try:
             raw = decrypt(raw)
         except Exception:
-            raw = recipe.ingredients
+            raw = recipe.ingredients_deprecated
     try:
         items = json.loads(raw)
     except Exception:
@@ -223,7 +222,7 @@ def count_recipes(
         query = query.filter(
             Recipe.title.contains(keyword)
             | Recipe.tags.contains(keyword)
-            | Recipe.ingredients.contains(keyword)
+            | Recipe.ingredients_deprecated.contains(keyword)
         )
     rows_query = _recipe_rows_with_work_counts(query)
     if not material and not materials and not has_work:
@@ -261,7 +260,7 @@ def list_recipes(
         query = query.filter(
             Recipe.title.contains(keyword)
             | Recipe.tags.contains(keyword)
-            | Recipe.ingredients.contains(keyword)
+            | Recipe.ingredients_deprecated.contains(keyword)
             | Recipe.recipe_no.contains(keyword)
         )
 
@@ -384,8 +383,8 @@ def purchased_recipes(user_id: int = Query(...), db: Session = Depends(get_db)):
     recipes = db.query(Recipe).filter(Recipe.id.in_(recipe_ids)).all()
     # 解密付费配方的加密数据
     for r in recipes:
-        if r.visibility == "paid" and r.ingredients and r.ingredients != "[]":
-            r.ingredients = decrypt(r.ingredients)
+        if r.visibility == "paid" and r.ingredients_deprecated and r.ingredients_deprecated != "[]":
+            r.ingredients_deprecated = decrypt(r.ingredients_deprecated)
             r.steps = decrypt(r.steps)
     return recipes
 
@@ -638,12 +637,12 @@ def get_recipe(
                 Purchase.status == "confirmed",
             ).first()
             if not purchase:
-                recipe.ingredients = "[]"
+                recipe.ingredients_deprecated = "[]"
                 recipe.steps = "[]"
             else:
                 recipe.is_purchased = True
         else:
-            recipe.ingredients = "[]"
+            recipe.ingredients_deprecated = "[]"
             recipe.steps = "[]"
 
     # 收藏状态
@@ -667,7 +666,7 @@ def get_recipe(
             recipe.is_liked = True
 
     # 对授权用户解密付费配方数据
-    if recipe.visibility == "paid" and recipe.ingredients and recipe.ingredients != "[]":
+    if recipe.visibility == "paid" and recipe.ingredients_deprecated and recipe.ingredients_deprecated != "[]":
         is_owner = recipe.user_id == user_id
         is_purchaser = False
         if user_id > 0 and not is_owner:
@@ -678,7 +677,7 @@ def get_recipe(
             ).first()
             is_purchaser = purchase is not None
         if is_owner or is_purchaser:
-            recipe.ingredients = decrypt(recipe.ingredients)
+            recipe.ingredients_deprecated = decrypt(recipe.ingredients_deprecated)
             recipe.steps = decrypt(recipe.steps)
 
     # 带上作者名
@@ -728,11 +727,9 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
     check_publish_limits(db, user_id, recipe_price=recipe.price or 0)
 
     # 付费配方：加密原料和步骤
-    ingredients = recipe.ingredients
     steps = recipe.steps
-    if recipe.visibility == "paid" and recipe.ingredients and recipe.ingredients != "[]":
-        ingredients = encrypt(recipe.ingredients)
-        steps = encrypt(recipe.steps) if recipe.steps else "[]"
+    if recipe.steps:
+        steps = encrypt(recipe.steps) if recipe.visibility == "paid" else recipe.steps
 
     db_recipe = Recipe(
         user_id=user_id,
@@ -741,7 +738,6 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         type=recipe.type,
         cover=recipe.cover,
         images=recipe.images,
-        ingredients=ingredients,
         steps=steps,
         tips=recipe.tips,
         category=recipe.category,
@@ -789,10 +785,8 @@ def update_recipe(
     if new_price > 0 and (db_recipe.price or 0) == 0:
         check_paid_switch(db, user_id, recipe_id)
 
-    # 付费配方：加密原料和步骤
+    # 付费配方：加密步骤
     if db_recipe.visibility == "paid" or (update_data.get("visibility") == "paid"):
-        if "ingredients" in update_data and update_data["ingredients"] and update_data["ingredients"] != "[]":
-            update_data["ingredients"] = encrypt(update_data["ingredients"])
         if "steps" in update_data and update_data["steps"]:
             update_data["steps"] = encrypt(update_data["steps"])
     for key, value in update_data.items():
