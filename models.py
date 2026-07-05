@@ -36,7 +36,6 @@ class Recipe(Base):
     type = Column(String(20), default="recipe")  # recipe / firing / matching
     cover = Column(String(200), default="")
     images = Column(Text, default="[]")  # JSON: 多图URL，烧制作品/找配方参考图
-    ingredients_deprecated = Column("ingredients_deprecated", Text, default="[]")
     steps = Column(Text, default="[]")
     tips = Column(Text, default="")
     category = Column(String(30), default="")

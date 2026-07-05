@@ -55,7 +55,6 @@ class RecipeOut(BaseModel):
     type: Optional[str] = "recipe"
     cover: Optional[str] = ""
     images: Optional[str] = "[]"
-    ingredients_deprecated: Optional[str] = "[]"
     steps: Optional[str] = "[]"
     tips: Optional[str] = ""
     category: Optional[str] = ""

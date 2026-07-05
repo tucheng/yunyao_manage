@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import Recipe, User, Purchase, Review, Favorite, Work, RecipeSequence, Like, RecipeView
+from models import Recipe, User, Purchase, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient
 from schemas import (
     RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
     PurchaseCreate, PurchaseOut, ReviewCreate, ReviewOut,
@@ -58,44 +58,26 @@ def _public_recipe_query(db: Session):
     )
 
 
-def _recipe_ingredient_names(recipe: Recipe) -> list[str]:
-    if not recipe.ingredients_deprecated or recipe.ingredients_deprecated == "[]":
-        return []
-    raw = recipe.ingredients_deprecated
-    if recipe.visibility == "paid":
-        try:
-            raw = decrypt(raw)
-        except Exception:
-            raw = recipe.ingredients_deprecated
-    try:
-        items = json.loads(raw)
-    except Exception:
-        return []
-    if not isinstance(items, list):
-        return []
-    names = []
-    for item in items:
-        if isinstance(item, dict):
-            name = str(item.get("name") or "").strip()
-        else:
-            name = str(item or "").strip()
-        if name:
-            names.append(name)
-    return names
+def _recipe_ingredient_names(recipe_id: int, db: Session) -> list[str]:
+    """从 recipe_ingredients 表查原料名称"""
+    rows = db.query(RecipeIngredient.name).filter(
+        RecipeIngredient.recipe_id == recipe_id
+    ).all()
+    return [r[0] for r in rows if r[0]]
 
 
-def _recipe_has_material(recipe: Recipe, material: str) -> bool:
+def _recipe_has_material(recipe: Recipe, material: str, db: Session) -> bool:
     material = (material or "").strip()
     if not material:
         return True
-    return material in _recipe_ingredient_names(recipe)
+    return material in _recipe_ingredient_names(recipe.id, db)
 
 
-def _recipe_has_all_materials(recipe: Recipe, materials_str: str) -> bool:
+def _recipe_has_all_materials(recipe: Recipe, materials_str: str, db: Session) -> bool:
     """AND 逻辑：配方必须包含所有指定的原料"""
     if not materials_str:
         return True
-    names = _recipe_ingredient_names(recipe)
+    names = _recipe_ingredient_names(recipe.id, db)
     for m in materials_str.split(","):
         m = m.strip()
         if m and m not in names:
@@ -107,10 +89,10 @@ def _recipe_has_work(recipe: Recipe, work_count: int) -> bool:
     return bool(work_count and work_count > 0)
 
 
-def _recipe_matches_search_filters(recipe: Recipe, material: str, has_work: str, work_count: int, materials: str = "") -> bool:
-    if material and not _recipe_has_material(recipe, material):
+def _recipe_matches_search_filters(recipe: Recipe, material: str, has_work: str, work_count: int, materials: str = "", db: Session = None) -> bool:
+    if material and not _recipe_has_material(recipe, material, db):
         return False
-    if materials and not _recipe_has_all_materials(recipe, materials):
+    if materials and not _recipe_has_all_materials(recipe, materials, db):
         return False
     has_linked_work = _recipe_has_work(recipe, work_count)
     if has_work == "yes" and not has_linked_work:
@@ -187,7 +169,7 @@ def recipe_search_config(db: Session = Depends(get_db)):
     material_names = []
     seen = set()
     for recipe in rows:
-        for name in _recipe_ingredient_names(recipe):
+        for name in _recipe_ingredient_names(recipe.id, db):
             if name not in seen:
                 seen.add(name)
                 material_names.append(name)
@@ -222,14 +204,13 @@ def count_recipes(
         query = query.filter(
             Recipe.title.contains(keyword)
             | Recipe.tags.contains(keyword)
-            | Recipe.ingredients_deprecated.contains(keyword)
         )
     rows_query = _recipe_rows_with_work_counts(query)
     if not material and not materials and not has_work:
         return {"count": query.count()}
     count = 0
     for recipe, _, _, work_count, *_ in rows_query.all():
-        if _recipe_matches_search_filters(recipe, material, has_work, work_count or 0, materials):
+        if _recipe_matches_search_filters(recipe, material, has_work, work_count or 0, materials, db):
             count += 1
     return {"count": count}
 
@@ -260,7 +241,6 @@ def list_recipes(
         query = query.filter(
             Recipe.title.contains(keyword)
             | Recipe.tags.contains(keyword)
-            | Recipe.ingredients_deprecated.contains(keyword)
             | Recipe.recipe_no.contains(keyword)
         )
 
@@ -268,7 +248,7 @@ def list_recipes(
     if material or materials or has_work:
         filtered_rows = []
         for recipe, nickname, avatar, work_count, work_image, work_images, fav_count in rows_query.all():
-            if _recipe_matches_search_filters(recipe, material, has_work, work_count or 0, materials):
+            if _recipe_matches_search_filters(recipe, material, has_work, work_count or 0, materials, db):
                 filtered_rows.append((recipe, nickname, avatar, work_count, work_image, work_images, fav_count))
         start = (page - 1) * page_size
         rows = filtered_rows[start:start + page_size]
@@ -383,8 +363,7 @@ def purchased_recipes(user_id: int = Query(...), db: Session = Depends(get_db)):
     recipes = db.query(Recipe).filter(Recipe.id.in_(recipe_ids)).all()
     # 解密付费配方的加密数据
     for r in recipes:
-        if r.visibility == "paid" and r.ingredients_deprecated and r.ingredients_deprecated != "[]":
-            r.ingredients_deprecated = decrypt(r.ingredients_deprecated)
+        if r.visibility == "paid" and r.steps and r.steps != "[]":
             r.steps = decrypt(r.steps)
     return recipes
 
@@ -637,12 +616,10 @@ def get_recipe(
                 Purchase.status == "confirmed",
             ).first()
             if not purchase:
-                recipe.ingredients_deprecated = "[]"
                 recipe.steps = "[]"
             else:
                 recipe.is_purchased = True
         else:
-            recipe.ingredients_deprecated = "[]"
             recipe.steps = "[]"
 
     # 收藏状态
@@ -666,7 +643,7 @@ def get_recipe(
             recipe.is_liked = True
 
     # 对授权用户解密付费配方数据
-    if recipe.visibility == "paid" and recipe.ingredients_deprecated and recipe.ingredients_deprecated != "[]":
+    if recipe.visibility == "paid" and recipe.steps and recipe.steps != "[]":
         is_owner = recipe.user_id == user_id
         is_purchaser = False
         if user_id > 0 and not is_owner:
@@ -677,7 +654,6 @@ def get_recipe(
             ).first()
             is_purchaser = purchase is not None
         if is_owner or is_purchaser:
-            recipe.ingredients_deprecated = decrypt(recipe.ingredients_deprecated)
             recipe.steps = decrypt(recipe.steps)
 
     # 带上作者名
