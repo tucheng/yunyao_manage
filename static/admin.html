@@ -87,6 +87,7 @@ tr:hover { background: #f8f8f8; }
       <a onclick="switchTab('temperature-config')">温度配置</a>
       <a onclick="switchTab('color-config')">颜色配置</a>
       <a onclick="switchTab('work-attributes')">作品属性</a>
+      <a onclick="switchTab('glazy-materials')">海外材料</a>
       <a onclick="switchTab('verification')">验证码配置</a>
       <a onclick="switchTab('system')">系统设置</a>
     </div>
@@ -184,6 +185,25 @@ tr:hover { background: #f8f8f8; }
           <div class="help">管理作品发布时的可选值，增删改后立即生效。</div>
         </div>
         <div id="attrConfigContainer"></div>
+      </div>
+    </div>
+
+    <!-- 海外材料 -->
+    <div id="tab-glazy-materials" class="section">
+      <div class="card">
+        <h2>Glazy 海外材料</h2>
+        <div class="help" style="margin-bottom:12px">共 <span id="glazyMatTotal">-</span> 条材料，可搜索英文名或中文名。</div>
+        <div class="search-bar">
+          <input id="glazyMatSearch" placeholder="搜索材料名称..." onkeydown="if(event.key==='Enter')loadGlazyMaterials()">
+          <button class="btn btn-primary" onclick="loadGlazyMaterials()">搜索</button>
+        </div>
+        <table>
+          <thead><tr>
+            <th>ID</th><th>英文名</th><th>中文名</th><th>膨胀系数</th><th>SiO₂</th><th>Al₂O₃</th><th>Na₂O</th><th>K₂O</th><th>MgO</th><th>CaO</th><th>Fe₂O₃</th><th>TiO₂</th><th>ZnO</th><th>B₂O₃</th><th>P₂O₅</th><th>LOI</th>
+          </tr></thead>
+          <tbody id="glazyMatTableBody"></tbody>
+        </table>
+        <div class="pagination" id="glazyMatPagination"></div>
       </div>
     </div>
 
@@ -813,7 +833,51 @@ switchTab = function(name) {
   if (name === 'work-attributes') {
     loadWorkAttributes();
   }
+  if (name === 'glazy-materials') {
+    loadGlazyMaterials();
+  }
 };
+
+// ====== Glazy 海外材料查询 ======
+let glazyMatPage = 1;
+
+function loadGlazyMaterials(p) {
+  if (p !== undefined) glazyMatPage = p;
+  const q = document.getElementById('glazyMatSearch').value;
+  api('/admin/glazy-materials?page=' + glazyMatPage + '&page_size=50' + (q ? '&q=' + encodeURIComponent(q) : ''))
+    .then(d => {
+      document.getElementById('glazyMatTotal').textContent = d.total;
+      const tbody = document.getElementById('glazyMatTableBody');
+      tbody.innerHTML = d.results.map(m => {
+        const exp = m.thermal_expansion != null ? m.thermal_expansion.toFixed(4) : '-';
+        const fmt = v => v != null ? v.toFixed(2) : '-';
+        return `<tr>
+          <td>${m.glazy_id}</td>
+          <td>${esc(m.name)}</td>
+          <td>${esc(m.name_cn || '-')}</td>
+          <td>${exp}</td>
+          <td>${fmt(m.sio2)}</td>
+          <td>${fmt(m.al2o3)}</td>
+          <td>${fmt(m.na2o)}</td>
+          <td>${fmt(m.k2o)}</td>
+          <td>${fmt(m.mgo)}</td>
+          <td>${fmt(m.cao)}</td>
+          <td>${fmt(m.fe2o3)}</td>
+          <td>${fmt(m.tio2)}</td>
+          <td>${fmt(m.zno)}</td>
+          <td>${fmt(m.b2o3)}</td>
+          <td>${fmt(m.p2o5)}</td>
+          <td>${fmt(m.loi)}</td>
+        </tr>`;
+      }).join('');
+      const totalPages = Math.ceil(d.total / 50);
+      document.getElementById('glazyMatPagination').innerHTML = `
+        <button class="btn btn-sm" onclick="loadGlazyMaterials(${glazyMatPage-1})" ${glazyMatPage<=1?'disabled':''}>‹</button>
+        <span>第 ${d.page}/${totalPages} 页 (共 ${d.total} 条)</span>
+        <button class="btn btn-sm" onclick="loadGlazyMaterials(${glazyMatPage+1})" ${glazyMatPage>=totalPages?'disabled':''}>›</button>
+      `;
+    }).catch(e => toast(e.message, 'error'));
+}
 function openModal(id) { document.getElementById(id).classList.add('show'); }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }

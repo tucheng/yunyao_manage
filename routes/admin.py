@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
-from models import AppSetting, User, UserLevel, Recipe, Work, Notification, WorkAttributeOption
+from models import AppSetting, User, UserLevel, Recipe, Work, Notification, WorkAttributeOption, GlazyMaterial
 from pydantic import BaseModel
 from typing import Optional
 from app_config import ADMIN_TOKEN, ADMIN_USER_IDS
@@ -496,3 +496,64 @@ def get_public_work_attributes(db: Session = Depends(get_db)):
     for opt in options:
         grouped.setdefault(opt.category, []).append(opt.value)
     return grouped
+
+
+# ========= Glazy 海外材料查询 =========
+
+@router.get("/glazy-materials")
+def list_glazy_materials(
+    q: str = "",
+    page: int = 1,
+    page_size: int = Query(default=50, alias="page_size"),
+    token: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    """查询 Glazy 海外材料"""
+    verify_admin(token)
+    qry = db.query(GlazyMaterial)
+    if q:
+        like = f"%{q}%"
+        qry = qry.filter(
+            GlazyMaterial.name.like(like)
+            | GlazyMaterial.name_cn.like(like)
+        )
+    total = qry.count()
+    items = qry.order_by(GlazyMaterial.name).offset((page - 1) * page_size).limit(page_size).all()
+    return {
+        "results": [
+            {
+                "glazy_id": m.glazy_id,
+                "name": m.name,
+                "name_cn": m.name_cn or "",
+                "is_primitive": bool(m.is_primitive),
+                "sio2": m.sio2, "al2o3": m.al2o3,
+                "na2o": m.na2o, "k2o": m.k2o, "mgo": m.mgo,
+                "cao": m.cao, "fe2o3": m.fe2o3, "tio2": m.tio2,
+                "zno": m.zno, "b2o3": m.b2o3, "p2o5": m.p2o5, "loi": m.loi,
+                "thermal_expansion": m.thermal_expansion,
+            }
+            for m in items
+        ],
+        "total": total,
+        "page": page,
+    }
+
+
+@router.get("/glazy-materials/{glazy_id}")
+def get_glazy_material(glazy_id: int, token: str = Query(...), db: Session = Depends(get_db)):
+    """查询单个材料详情"""
+    verify_admin(token)
+    m = db.query(GlazyMaterial).filter(GlazyMaterial.glazy_id == glazy_id).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="材料不存在")
+    return {
+        "glazy_id": m.glazy_id,
+        "name": m.name,
+        "name_cn": m.name_cn or "",
+        "is_primitive": bool(m.is_primitive),
+        "sio2": m.sio2, "al2o3": m.al2o3,
+        "na2o": m.na2o, "k2o": m.k2o, "mgo": m.mgo,
+        "cao": m.cao, "fe2o3": m.fe2o3, "tio2": m.tio2,
+        "zno": m.zno, "b2o3": m.b2o3, "p2o5": m.p2o5, "loi": m.loi,
+        "thermal_expansion": m.thermal_expansion,
+    }

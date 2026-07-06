@@ -394,3 +394,27 @@ class WalletTransaction(Base):
     type = Column(String(20), nullable=False)  # deposit / withdraw / spending
     amount = Column(Integer, nullable=False)  # 分（正数）
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class GlazyMaterial(Base):
+    """Glazy 海外材料数据"""
+    __tablename__ = "glazy_materials"
+
+    glazy_id = Column(Integer, primary_key=True, autoincrement=False)
+    name = Column(String(200), nullable=False, index=True)
+    name_cn = Column(String(200), default="")
+    is_analysis = Column(Integer, default=0)
+    is_primitive = Column(Integer, default=0)
+    sio2 = Column(Float, nullable=True)
+    al2o3 = Column(Float, nullable=True)
+    na2o = Column(Float, nullable=True)
+    k2o = Column(Float, nullable=True)
+    mgo = Column(Float, nullable=True)
+    cao = Column(Float, nullable=True)
+    fe2o3 = Column(Float, nullable=True)
+    tio2 = Column(Float, nullable=True)
+    zno = Column(Float, nullable=True)
+    b2o3 = Column(Float, nullable=True)
+    p2o5 = Column(Float, nullable=True)
+    loi = Column(Float, nullable=True)
+    thermal_expansion = Column(Float, nullable=True)
