@@ -4,7 +4,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
-from models import AppSetting, User, UserLevel, Recipe, Work, Notification
+from models import AppSetting, User, UserLevel, Recipe, Work, Notification, WorkAttributeOption
 from pydantic import BaseModel
 from typing import Optional
 from app_config import ADMIN_TOKEN, ADMIN_USER_IDS
@@ -427,3 +427,72 @@ def update_work_search_settings(
     _set_json_setting(db, "work_search_color_ranges", color_ranges)
     db.commit()
     return {"ok": True}
+
+
+# ========= 作品属性选项配置 =========
+
+class WorkAttributeOptionBody(BaseModel):
+    category: str
+    value: str
+    sort_order: int = 0
+
+
+@router.get("/work-attributes")
+def list_work_attributes(token: str = Query(...), db: Session = Depends(get_db)):
+    """获取所有作品属性选项，按 category 分组"""
+    verify_admin(token)
+    options = db.query(WorkAttributeOption).order_by(WorkAttributeOption.category, WorkAttributeOption.sort_order).all()
+    grouped = {}
+    for opt in options:
+        grouped.setdefault(opt.category, []).append({
+            "id": opt.id,
+            "value": opt.value,
+            "sort_order": opt.sort_order,
+        })
+    return grouped
+
+
+@router.post("/work-attributes")
+def create_work_attribute(body: WorkAttributeOptionBody, token: str = Query(...), db: Session = Depends(get_db)):
+    verify_admin(token)
+    opt = WorkAttributeOption(category=body.category, value=body.value, sort_order=body.sort_order)
+    db.add(opt)
+    db.commit()
+    db.refresh(opt)
+    return {"id": opt.id, "ok": True}
+
+
+@router.put("/work-attributes/{opt_id}")
+def update_work_attribute(opt_id: int, body: WorkAttributeOptionBody, token: str = Query(...), db: Session = Depends(get_db)):
+    verify_admin(token)
+    opt = db.query(WorkAttributeOption).filter(WorkAttributeOption.id == opt_id).first()
+    if not opt:
+        raise HTTPException(status_code=404, detail="选项不存在")
+    opt.category = body.category
+    opt.value = body.value
+    opt.sort_order = body.sort_order
+    db.commit()
+    return {"ok": True}
+
+
+@router.delete("/work-attributes/{opt_id}")
+def delete_work_attribute(opt_id: int, token: str = Query(...), db: Session = Depends(get_db)):
+    verify_admin(token)
+    opt = db.query(WorkAttributeOption).filter(WorkAttributeOption.id == opt_id).first()
+    if not opt:
+        raise HTTPException(status_code=404, detail="选项不存在")
+    db.delete(opt)
+    db.commit()
+    return {"ok": True}
+
+
+# ========= 公开接口（不含管理验证）=========
+
+@router.get("/public/work-attributes")
+def get_public_work_attributes(db: Session = Depends(get_db)):
+    """公开查询，前端发布/搜索作品时用"""
+    options = db.query(WorkAttributeOption).order_by(WorkAttributeOption.category, WorkAttributeOption.sort_order).all()
+    grouped = {}
+    for opt in options:
+        grouped.setdefault(opt.category, []).append(opt.value)
+    return grouped

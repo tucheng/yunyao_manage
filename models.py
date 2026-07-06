@@ -260,6 +260,17 @@ class Complaint(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class WorkAttributeOption(Base):
+    """作品属性可选值（后台配置）"""
+    __tablename__ = "work_attribute_options"
+
+    id = Column(Integer, primary_key=True, index=True)
+    category = Column(String(30), nullable=False, index=True)  # type / body_material / kiln_type / temperature / surface / transparency
+    value = Column(String(50), nullable=False)
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class GlossaryTerm(Base):
     """陶瓷术语表（附属/名词解释）"""
     __tablename__ = "glossary_terms"

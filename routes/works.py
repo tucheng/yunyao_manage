@@ -235,16 +235,21 @@ def _work_matches_search_filters(
 @router.get("/search/config")
 def get_work_search_config(db: Session = Depends(get_db)):
     """作品高级搜索配置。"""
-    from models import BodyMaterial
+    from models import BodyMaterial, WorkAttributeOption
     body_materials = [
         row.name for row in db.query(BodyMaterial).order_by(BodyMaterial.sort_order).all()
     ]
+    # 从 DB 读取作品属性选项
+    attr_options = db.query(WorkAttributeOption).order_by(WorkAttributeOption.category, WorkAttributeOption.sort_order).all()
+    kiln_types = [o.value for o in attr_options if o.category == "kiln_type"]
+    surfaces = [o.value for o in attr_options if o.category == "surface"]
+    transparencies = [o.value for o in attr_options if o.category == "transparency"]
     return {
         "body_materials": body_materials,
-        "kiln_types": KILN_TYPE_OPTIONS,
+        "kiln_types": kiln_types or KILN_TYPE_OPTIONS,
         "temperature_ranges": _get_temperature_ranges(db),
-        "surfaces": SURFACE_OPTIONS,
-        "transparencies": TRANSPARENCY_OPTIONS,
+        "surfaces": surfaces or SURFACE_OPTIONS,
+        "transparencies": transparencies or TRANSPARENCY_OPTIONS,
         "color_ranges": _get_color_ranges(db),
         "has_recipe_options": HAS_RECIPE_OPTIONS,
     }

@@ -86,6 +86,7 @@ tr:hover { background: #f8f8f8; }
       <a onclick="switchTab('levels')">等级管理</a>
       <a onclick="switchTab('temperature-config')">温度配置</a>
       <a onclick="switchTab('color-config')">颜色配置</a>
+      <a onclick="switchTab('work-attributes')">作品属性</a>
       <a onclick="switchTab('verification')">验证码配置</a>
       <a onclick="switchTab('system')">系统设置</a>
     </div>
@@ -172,6 +173,17 @@ tr:hover { background: #f8f8f8; }
       </div>
       <div class="card">
         <button class="btn btn-primary" onclick="saveColorSettings()">保存颜色配置</button>
+      </div>
+    </div>
+
+    <!-- 作品属性 -->
+    <div id="tab-work-attributes" class="section">
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h2>作品属性配置</h2>
+          <div class="help">管理作品发布时的可选值，增删改后立即生效。</div>
+        </div>
+        <div id="attrConfigContainer"></div>
       </div>
     </div>
 
@@ -689,7 +701,119 @@ function togglePaidEnabled() {
   });
 }
 
-// ====== 通用 ======
+// ====== 作品属性配置 ======
+const ATTR_CATEGORIES = {
+  type: '类型',
+  body_material: '底坯',
+  kiln_type: '烧制方式',
+  surface: '釉面质感',
+  transparency: '透明度',
+};
+
+function loadWorkAttributes() {
+  api('/admin/work-attributes').then(grouped => {
+    const container = document.getElementById('attrConfigContainer');
+    container.innerHTML = '';
+    for (const [cat, catLabel] of Object.entries(ATTR_CATEGORIES)) {
+      const items = grouped[cat] || [];
+      const div = document.createElement('div');
+      div.style.marginBottom = '20px';
+      div.innerHTML = `
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
+          <h3 style="font-size:15px;margin:0">${esc(catLabel)} <span style="color:#999;font-weight:400;font-size:12px">(${cat})</span></h3>
+          <button class="btn btn-sm btn-primary" onclick="addAttrOption('${cat}')">+ 添加</button>
+        </div>
+        <table class="config-table">
+          <thead><tr><th style="width:60px">排序</th><th>选项值</th><th style="width:80px">操作</th></tr></thead>
+          <tbody id="attr-tbody-${cat}">
+            ${items.map(opt => `
+              <tr data-id="${opt.id}" data-cat="${cat}">
+                <td><input class="narrow" type="number" value="${opt.sort_order}" data-field="sort_order"></td>
+                <td><input type="text" value="${escAttr(opt.value)}" data-field="value" style="width:100%"></td>
+                <td><button class="btn btn-danger btn-sm" onclick="deleteAttrOption(this)">删除</button></td>
+              </tr>
+            `).join('')}
+            <tr id="attr-newrow-${cat}" style="display:none">
+              <td><input class="narrow" type="number" value="99" data-field="sort_order"></td>
+              <td><input type="text" placeholder="输入新选项..." data-field="value" style="width:100%"></td>
+              <td><button class="btn btn-sm btn-primary" onclick="saveNewAttr('${cat}')">保存</button>
+                  <button class="btn btn-sm" onclick="cancelNewAttr('${cat}')">取消</button></td>
+            </tr>
+          </tbody>
+        </table>
+      `;
+      container.appendChild(div);
+    }
+    container.innerHTML += '<button class="btn btn-primary" onclick="saveAllAttributes()">保存全部修改</button>';
+  }).catch(e => toast(e.message, 'error'));
+}
+
+function addAttrOption(cat) {
+  document.getElementById('attr-newrow-' + cat).style.display = '';
+}
+
+function cancelNewAttr(cat) {
+  const row = document.getElementById('attr-newrow-' + cat);
+  row.style.display = 'none';
+  row.querySelector('[data-field="value"]').value = '';
+}
+
+function saveNewAttr(cat) {
+  const row = document.getElementById('attr-newrow-' + cat);
+  const value = row.querySelector('[data-field="value"]').value.trim();
+  const sortOrder = parseInt(row.querySelector('[data-field="sort_order"]').value) || 99;
+  if (!value) { toast('请输入选项值', 'error'); return; }
+  api('/admin/work-attributes', {
+    method: 'POST',
+    body: JSON.stringify({ category: cat, value, sort_order: sortOrder }),
+  }).then(() => {
+    toast('已添加');
+    loadWorkAttributes();
+  }).catch(e => toast(e.message, 'error'));
+}
+
+function deleteAttrOption(btn) {
+  if (!confirm('确定删除此选项？')) return;
+  const tr = btn.closest('tr');
+  const id = tr.dataset.id;
+  if (!id) return;
+  api('/admin/work-attributes/' + id, { method: 'DELETE' })
+    .then(() => {
+      toast('已删除');
+      tr.remove();
+    }).catch(e => toast(e.message, 'error'));
+}
+
+function saveAllAttributes() {
+  const promises = [];
+  document.querySelectorAll('#attrConfigContainer tbody tr[data-id]').forEach(tr => {
+    const id = tr.dataset.id;
+    const cat = tr.dataset.cat;
+    const value = tr.querySelector('[data-field="value"]').value.trim();
+    const sortOrder = parseInt(tr.querySelector('[data-field="sort_order"]').value) || 0;
+    if (!value) return;
+    promises.push(
+      api('/admin/work-attributes/' + id, {
+        method: 'PUT',
+        body: JSON.stringify({ category: cat, value, sort_order: sortOrder }),
+      })
+    );
+  });
+  if (!promises.length) { toast('没有修改', 'error'); return; }
+  Promise.all(promises).then(() => {
+    toast('全部已保存');
+    loadWorkAttributes();
+  }).catch(e => toast('保存失败: ' + e.message, 'error'));
+}
+
+// 在切换 tab 时加载
+const origSwitchTab = switchTab;
+switchTab = function(name) {
+  origSwitchTab(name);
+  if (name === 'work-attributes') {
+    loadWorkAttributes();
+  }
+};
 function openModal(id) { document.getElementById(id).classList.add('show'); }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
