@@ -1,8 +1,22 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
 from sqlalchemy.orm import Session
+from models import AppSetting
 from database import get_db
 from models import User, UserLevel, Recipe, Work, Follow, Favorite, FiringCurve, ToBeFired
 from auth_utils import get_current_user
+import json
+
+PAID_ENABLED_KEY = "paid_enabled"
+
+
+def _get_paid_enabled(db: Session) -> bool:
+    row = db.query(AppSetting).filter(AppSetting.key == PAID_ENABLED_KEY).first()
+    if not row or not row.value:
+        return False
+    try:
+        return json.loads(row.value) is True
+    except Exception:
+        return False
 
 router = APIRouter(prefix="/users", tags=["用户"])
 
@@ -53,6 +67,7 @@ def get_profile(user_id: int = Query(...), db: Session = Depends(get_db)):
         "level_id": user.level_id or 1,
         "level_name": level.name if level else "普通用户",
         "can_publish_paid": level.can_publish_paid if level else False,
+        "paid_enabled": _get_paid_enabled(db),
         "following_count": following_count,
         "follower_count": follower_count,
         "recipe_count": recipe_count,
@@ -89,6 +104,7 @@ def get_my_profile(request: Request, db: Session = Depends(get_db)):
         "level_id": user.level_id or 1,
         "level_name": level.name if level else "普通用户",
         "can_publish_paid": level.can_publish_paid if level else False,
+        "paid_enabled": _get_paid_enabled(db),
         "created_at": user.created_at,
     }
 

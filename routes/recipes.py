@@ -626,6 +626,10 @@ def get_recipe(
     if not recipe:
         raise HTTPException(status_code=404, detail="不存在")
 
+    # 私密配方：只有作者可看
+    if recipe.visibility == "private" and recipe.user_id != user_id:
+        raise HTTPException(status_code=404, detail="不存在")
+
     # 付费/显摆模式：隐藏原料和步骤
     recipe.is_purchased = False
     if recipe.type == "recipe" and recipe.visibility in ("paid", "showoff") and recipe.user_id != user_id:

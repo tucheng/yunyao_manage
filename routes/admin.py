@@ -302,6 +302,31 @@ def get_work_search_settings(token: str = Query(...), db: Session = Depends(get_
         "temperature_ranges": _ensure_json_setting(db, "work_search_temperature_ranges", TEMPERATURE_RANGE_CONFIG),
         "color_ranges": _ensure_json_setting(db, "work_search_color_ranges", get_color_range_config()),
     }
+# ========= 付费功能开关 =========
+
+SYSTEM_PAID_ENABLED_KEY = "paid_enabled"
+
+
+@router.get("/paid-enabled")
+def get_paid_enabled(token: str = Query(...), db: Session = Depends(get_db)):
+    verify_admin(token)
+    return {"paid_enabled": _get_json_setting(db, SYSTEM_PAID_ENABLED_KEY, False)}
+
+
+class PaidEnabledBody(BaseModel):
+    paid_enabled: bool
+
+
+@router.put("/paid-enabled")
+def update_paid_enabled(
+    body: PaidEnabledBody,
+    token: str = Query(...),
+    db: Session = Depends(get_db),
+):
+    verify_admin(token)
+    _set_json_setting(db, SYSTEM_PAID_ENABLED_KEY, body.paid_enabled)
+    db.commit()
+    return {"ok": True, "paid_enabled": body.paid_enabled}
 
 
 @router.put("/work-search-settings")

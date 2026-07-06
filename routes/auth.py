@@ -77,7 +77,7 @@ def _normalize_verification_target(email: str, phone: str, db: Session) -> tuple
     return email, phone, f"email:{email}" if email else f"phone:{phone}"
 
 
-def _verify_code(target_key: str, code: str) -> None:
+def _verify_code(target_key: str, code: str, consume: bool = True) -> None:
     stored = _verification_codes.get(target_key)
     if not stored:
         raise HTTPException(status_code=400, detail="请先获取验证码")
@@ -87,7 +87,8 @@ def _verify_code(target_key: str, code: str) -> None:
         raise HTTPException(status_code=400, detail="验证码已过期")
     if code.strip() != expected:
         raise HTTPException(status_code=400, detail="验证码错误")
-    _verification_codes.pop(target_key, None)
+    if consume:
+        _verification_codes.pop(target_key, None)
 
 
 def _login_response(user: User, db: Session | None = None, password: str | None = None, upgrade_hash: bool = False):
@@ -181,8 +182,30 @@ def find_user(body: FindUserRequest, db: Session = Depends(get_db)):
         User.username == uname, User.email == email
     ).first()
     if user:
-        return {"found": True, "message": "已找到您的账号，请联系管理员重置密码"}
+        return {"found": True, "message": "已找到您的账号"}
     return {"found": False, "message": "未找到匹配的用户名和邮箱"}
+
+
+class VerifyCodeRequest(BaseModel):
+    email: str = ""
+    phone: str = ""
+    code: str
+
+
+@router.post("/verify-code")
+def verify_code(body: VerifyCodeRequest, db: Session = Depends(get_db)):
+    email, phone, target_key = _normalize_verification_target(body.email, body.phone, db)
+    stored = _verification_codes.get(target_key)
+    if not stored:
+        raise HTTPException(status_code=400, detail="请先获取验证码")
+    expected, expires_at = stored
+    if expires_at < time.time():
+        _verification_codes.pop(target_key, None)
+        raise HTTPException(status_code=400, detail="验证码已过期")
+    if body.code.strip() != expected:
+        raise HTTPException(status_code=400, detail="验证码错误")
+    # 不删除验证码，让 reset-password 接口消费
+    return {"valid": True, "message": "验证码正确"}
 
 
 @router.post("/register")

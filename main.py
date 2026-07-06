@@ -73,7 +73,7 @@ async def log_requests(request: Request, call_next):
 
 
 def _requires_auth(path: str, method: str) -> bool:
-    if path in ("/auth/login", "/auth/register", "/auth/mp-login", "/auth/send-code", "/auth/captcha", "/auth/find-user", "/auth/reset-password", "/upload/image"):
+    if path in ("/auth/login", "/auth/register", "/auth/mp-login", "/auth/send-code", "/auth/captcha", "/auth/find-user", "/auth/verify-code", "/auth/reset-password", "/upload/image"):
         return False
     if path.startswith(("/admin", "/admin-panel", "/docs", "/openapi.json", "/uploads")):
         return False
@@ -172,6 +172,10 @@ class CachedStaticFiles(StaticFiles):
 web_dir = os.path.join(os.path.dirname(__file__), "..", "yunyao_app", "dist", "build", "h5")
 if os.path.exists(web_dir):
     app.mount("/web", CachedStaticFiles(directory=web_dir, html=True), name="web")
+
+static_dir = os.path.join(os.path.dirname(__file__), "static")
+if os.path.exists(static_dir):
+    app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
 uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
 os.makedirs(uploads_dir, exist_ok=True)
