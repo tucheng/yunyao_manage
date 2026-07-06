@@ -61,6 +61,8 @@ def verify_password(password: str, stored_hash: str) -> tuple[bool, bool]:
 
 
 def user_role(user: User) -> str:
+    if user.is_admin:
+        return "admin"
     return "admin" if user.id in ADMIN_USER_IDS else "user"
 
 

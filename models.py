@@ -23,6 +23,7 @@ class User(Base):
     trust_score = Column(Float, default=100.0)  # 信任分 0-100
     level_id = Column(Integer, ForeignKey("user_levels.id"), default=1)
     is_muted = Column(Boolean, default=False)
+    is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

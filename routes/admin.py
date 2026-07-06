@@ -7,18 +7,65 @@ from database import get_db
 from models import AppSetting, User, UserLevel, Recipe, Work, Notification
 from pydantic import BaseModel
 from typing import Optional
-from app_config import ADMIN_TOKEN
+from app_config import ADMIN_TOKEN, ADMIN_USER_IDS
+from auth_utils import decode_access_token, hash_password, verify_password
 from verification_sender import get_settings as get_verification_settings, save_settings as save_verification_settings
 from color_names import get_color_range_config
 from routes.works import TEMPERATURE_RANGE_CONFIG
 
 router = APIRouter(prefix="/admin", tags=["后台管理"])
 
-# ===== 简易管理认证 =====
+# ===== 管理认证（支持 ADMIN_TOKEN 或用户登录 JWT）=====
+
+class AdminLoginRequest(BaseModel):
+    username: str
+    password: str
+
 
 def verify_admin(token: str = Query(...)):
-    if not ADMIN_TOKEN or token != ADMIN_TOKEN:
-        raise HTTPException(status_code=403, detail="无权访问")
+    # 方式1: ADMIN_TOKEN 兼容
+    if ADMIN_TOKEN and token == ADMIN_TOKEN:
+        return
+    # 方式2: 用户 JWT + DB is_admin 字段
+    try:
+        payload = decode_access_token(token)
+        uid = int(payload.get("sub", 0))
+        if uid in ADMIN_USER_IDS:
+            return
+        from database import SessionLocal
+        db = SessionLocal()
+        try:
+            user = db.query(User).filter(User.id == uid).first()
+            if user and user.is_admin:
+                return
+        finally:
+            db.close()
+    except Exception:
+        pass
+    raise HTTPException(status_code=403, detail="无权访问")
+
+
+@router.post("/login")
+def admin_login(body: AdminLoginRequest, db: Session = Depends(get_db)):
+    uname = body.username.strip()
+    user = db.query(User).filter(
+        (User.username == uname) | (User.email == uname) | (User.phone == uname)
+    ).first()
+    if not user:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    ok, _ = verify_password(body.password, user.password_hash if user else "")
+    if not ok:
+        raise HTTPException(status_code=401, detail="用户名或密码错误")
+    if user.id not in ADMIN_USER_IDS and not user.is_admin:
+        raise HTTPException(status_code=403, detail="该账号无管理权限")
+    from auth_utils import create_access_token, user_role
+    token = create_access_token(user)
+    return {
+        "token": token,
+        "user_id": user.id,
+        "nickname": user.nickname,
+        "role": user_role(user),
+    }
 
 
 # ========= 用户管理 =========
@@ -29,7 +76,11 @@ def list_users(q: str = "", page: int = 1, page_size: int = Query(default=20, al
     verify_admin(token)
     qry = db.query(User)
     if q:
-        qry = qry.filter(User.nickname.like(f"%{q}%"))
+        qry = qry.filter(
+            User.nickname.like(f"%{q}%")
+            | User.username.like(f"%{q}%")
+            | User.email.like(f"%{q}%")
+        )
 
     total = qry.count()
     users = qry.order_by(User.id.desc()).offset((page - 1) * page_size).limit(page_size).all()
@@ -56,6 +107,7 @@ def list_users(q: str = "", page: int = 1, page_size: int = Query(default=20, al
         level = levels.get(u.level_id or 1, {"id": 1, "name": "普通用户"})
         result.append({
             "id": u.id,
+            "username": u.username or "",
             "nickname": u.nickname,
             "openid": u.openid[:8] + "..." if u.openid else "",
             "balance": u.balance or 0,
@@ -63,6 +115,7 @@ def list_users(q: str = "", page: int = 1, page_size: int = Query(default=20, al
             "level_id": u.level_id or 1,
             "level_name": level["name"],
             "is_muted": bool(u.is_muted),
+            "is_admin": bool(u.is_admin),
             "recipe_count": recipe_counts.get(u.id, 0),
             "paid_count": paid_counts.get(u.id, 0),
             "work_count": work_counts.get(u.id, 0),
@@ -94,6 +147,7 @@ def get_user(user_id: int, token: str = Query(...), db: Session = Depends(get_db
         "level_id": u.level_id or 1,
         "level_name": levels.get(u.level_id or 1, "普通用户"),
         "is_muted": bool(u.is_muted),
+        "is_admin": bool(u.is_admin),
         "recipe_count": recipe_count,
         "paid_count": paid_count,
         "free_count": recipe_count - paid_count,
@@ -105,6 +159,7 @@ def get_user(user_id: int, token: str = Query(...), db: Session = Depends(get_db
 class UpdateUserBody(BaseModel):
     level_id: Optional[int] = None
     is_muted: Optional[bool] = None
+    is_admin: Optional[bool] = None
 
 
 @router.put("/users/{user_id}")
@@ -122,6 +177,9 @@ def update_user(user_id: int, body: UpdateUserBody, token: str = Query(...), db:
 
     if body.is_muted is not None:
         u.is_muted = body.is_muted
+
+    if body.is_admin is not None:
+        u.is_admin = body.is_admin
 
     db.commit()
     return {"ok": True}

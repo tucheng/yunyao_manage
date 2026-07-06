@@ -68,9 +68,12 @@ tr:hover { background: #f8f8f8; }
 <div id="loginPage" class="login-page">
   <div class="login-card">
     <h2>🔐 云窑后台管理</h2>
-    <input type="password" id="tokenInput" placeholder="输入管理密码" onkeydown="if(event.key==='Enter')doLogin()">
+    <input type="text" id="usernameInput" placeholder="用户名" autocomplete="username"
+      onkeydown="if(event.key==='Enter')document.getElementById('passwordInput').focus()">
+    <input type="password" id="passwordInput" placeholder="密码" autocomplete="current-password"
+      onkeydown="if(event.key==='Enter')doLogin()">
     <button class="btn btn-primary" onclick="doLogin()">登录</button>
-    <p style="color:#999;font-size:12px;margin-top:8px">管理密码来自后端 ADMIN_TOKEN 配置</p>
+    <p id="loginError" style="color:#e74c3c;font-size:13px;margin-top:8px;display:none"></p>
   </div>
 </div>
 
@@ -104,7 +107,7 @@ tr:hover { background: #f8f8f8; }
         </div>
         <table>
           <thead><tr>
-            <th>ID</th><th>昵称</th><th>等级</th><th>配方总数</th><th>付费配方</th><th>作品数</th><th>状态</th><th>操作</th>
+            <th>ID</th><th>昵称</th><th>用户名</th><th>等级</th><th>管理员</th><th>配方</th><th>付费</th><th>作品</th><th>状态</th><th>操作</th>
           </tr></thead>
           <tbody id="userTableBody"></tbody>
         </table>
@@ -253,6 +256,9 @@ tr:hover { background: #f8f8f8; }
       <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:normal;margin-top:4px">
         <input type="checkbox" id="userEditMuted"> 禁言中
       </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:normal;margin-top:4px">
+        <input type="checkbox" id="userEditAdmin"> 管理员
+      </label>
     </div>
     <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
       <button class="btn" onclick="closeModal('userModal')">取消</button>
@@ -297,11 +303,15 @@ let TOKEN = '';
 let userPage = 1;
 
 function doLogin() {
-  TOKEN = document.getElementById('tokenInput').value.trim();
-  if (!TOKEN) return;
-  fetch('/admin/stats?token=' + encodeURIComponent(TOKEN))
-    .then(r => { if (!r.ok) throw new Error('密码错误'); return r.json(); })
+  const username = document.getElementById('usernameInput').value.trim();
+  const password = document.getElementById('passwordInput').value;
+  const errEl = document.getElementById('loginError');
+  errEl.style.display = 'none';
+  if (!username || !password) { errEl.textContent = '请输入用户名和密码'; errEl.style.display = 'block'; return; }
+  fetch('/admin/login', { method: 'POST', headers: {'Content-Type':'application/json'}, body: JSON.stringify({username, password}) })
+    .then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.detail || '登录失败'); }); return r.json(); })
     .then(d => {
+      TOKEN = d.token;
       document.getElementById('loginPage').style.display = 'none';
       document.getElementById('app').style.display = 'block';
       loadDashboard();
@@ -311,7 +321,7 @@ function doLogin() {
       loadVerificationSettings();
       loadSystemSettings();
     })
-    .catch(e => { alert('登录失败: ' + e.message); TOKEN = ''; });
+    .catch(e => { TOKEN = ''; errEl.textContent = e.message; errEl.style.display = 'block'; });
 }
 
 function toast(msg, type='success') {
@@ -361,7 +371,9 @@ function loadUsers(p) {
         return `<tr>
           <td>${u.id}</td>
           <td><strong>${esc(u.nickname || '?')}</strong></td>
+          <td style="color:#888;font-size:12px">${esc(u.username || '-')}</td>
           <td><span class="badge ${levelBadge}">${esc(u.level_name)}</span></td>
+          <td>${u.is_admin ? '<span class="badge badge-admin">是</span>' : '否'}</td>
           <td>${u.recipe_count}</td>
           <td>${u.paid_count > 0 ? '<span class="badge badge-paid">' + u.paid_count + '</span>' : u.paid_count}</td>
           <td>${u.work_count}</td>
@@ -383,6 +395,7 @@ function showUserModal(userId) {
     document.getElementById('userModalTitle').textContent = '编辑用户 - ' + u.nickname;
     document.getElementById('userEditNickname').textContent = u.nickname + ' (ID:' + u.id + ')';
     document.getElementById('userEditMuted').checked = u.is_muted;
+    document.getElementById('userEditAdmin').checked = u.is_admin;
     const sel = document.getElementById('userEditLevel');
     sel.innerHTML = '';
     api('/admin/levels').then(levels => {
@@ -403,6 +416,7 @@ function saveUser() {
   const data = {
     level_id: parseInt(document.getElementById('userEditLevel').value),
     is_muted: document.getElementById('userEditMuted').checked,
+    is_admin: document.getElementById('userEditAdmin').checked,
   };
   api('/admin/users/' + userId, {
     method: 'PUT',
