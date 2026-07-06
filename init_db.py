@@ -11,7 +11,7 @@ import sys
 import os
 sys.path.insert(0, os.path.dirname(__file__))
 
-from database import SessionLocal
+from database import SessionLocal, engine, Base
 from models import BodyMaterial, WorkAttributeOption, AppSetting
 from sqlalchemy import text
 
@@ -115,6 +115,10 @@ def init_work_search_settings(db) -> int:
 
 
 def main():
+    # 1. 自动建表（不会覆盖已有表）
+    Base.metadata.create_all(bind=engine)
+    print("✅ 数据表已就绪")
+
     db = SessionLocal()
     try:
         results = []
