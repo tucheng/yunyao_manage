@@ -23,6 +23,7 @@ from routes import (
     ceramic_materials,
     complaints,
     curves,
+    glazy_materials,
     glossary,
     materials,
     notifications,
@@ -149,6 +150,7 @@ app.include_router(upload.router)
 app.include_router(work_comments.router)
 app.include_router(glossary.router)
 app.include_router(ceramic_materials.router)
+app.include_router(glazy_materials.router)
 app.include_router(temperature_cones.router)
 app.include_router(complaints.router)
 app.include_router(notifications.router)
@@ -251,6 +253,7 @@ def get_all_favorites(
             "type": "recipe",
             "id": recipe.id,
             "title": recipe.title or "",
+            "recipe_no": recipe.recipe_no or "",
             "author_name": user.nickname or user.username or "未知",
             "author_id": user.id,
             "cover": recipe.cover or "",
@@ -262,7 +265,7 @@ def get_all_favorites(
         items.append({
             "type": "work",
             "id": work.id,
-            "title": work.description or work.recipe_title or "烧制作品",
+            "title": work.description or "烧制作品",
             "author_name": user.nickname or user.username or "未知",
             "author_id": user.id,
             "cover": (work.images or [""])[0] if work.images else work.cover or "",

@@ -38,7 +38,7 @@ class Recipe(Base):
     cover = Column(String(200), default="")
     images = Column(Text, default="[]")  # JSON: 多图URL，烧制作品/找配方参考图
     steps = Column(Text, default="[]")
-    tips = Column(Text, default="")
+    describe = Column(Text, default="")
     category = Column(String(30), default="")
     temperature = Column(String(30), default="")
     atmosphere = Column(String(20), default="")
@@ -62,6 +62,7 @@ class Recipe(Base):
     forked_from = Column(Integer, nullable=True)  # 二次改造来源配方ID
     source = Column(String(20), default="")  # 来源：glazy, etc.
     source_id = Column(String(50), default="")  # 来源原始ID
+    glaze_colors = Column(Text, default="[]")  # JSON: [{hex, r, g, b, name}]
 
 
 class Purchase(Base):

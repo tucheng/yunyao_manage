@@ -9,7 +9,7 @@ class RecipeCreate(BaseModel):
     cover: str = ""
     images: str = "[]"
     steps: str = "[]"
-    tips: str = ""
+    describe: str = ""
     category: str = ""
     temperature: str = ""
     atmosphere: str = ""
@@ -24,6 +24,7 @@ class RecipeCreate(BaseModel):
     visibility: str = "private"
     work_id: int = 0
     forked_from: Optional[int] = None
+    glaze_colors: Optional[str] = None  # JSON: [{hex, r, g, b, name}]
 
 
 class RecipeUpdate(BaseModel):
@@ -32,7 +33,7 @@ class RecipeUpdate(BaseModel):
     cover: Optional[str] = None
     images: Optional[str] = None
     steps: Optional[str] = None
-    tips: Optional[str] = None
+    describe: Optional[str] = None
     category: Optional[str] = None
     temperature: Optional[str] = None
     atmosphere: Optional[str] = None
@@ -46,6 +47,7 @@ class RecipeUpdate(BaseModel):
     contact: Optional[str] = None
     visibility: Optional[str] = None
     forked_from: Optional[int] = None
+    glaze_colors: Optional[str] = None
 
 class RecipeOut(BaseModel):
     id: int
@@ -56,7 +58,7 @@ class RecipeOut(BaseModel):
     cover: Optional[str] = ""
     images: Optional[str] = "[]"
     steps: Optional[str] = "[]"
-    tips: Optional[str] = ""
+    describe: Optional[str] = ""
     category: Optional[str] = ""
     temperature: Optional[str] = ""
     atmosphere: Optional[str] = ""
@@ -79,11 +81,13 @@ class RecipeOut(BaseModel):
     source: Optional[str] = ""
     source_id: Optional[str] = ""
     author_name: Optional[str] = ""
+    avatar: Optional[str] = ""
     rating_avg: Optional[float] = 0
     favorite_count: Optional[int] = 0
     works_count: Optional[int] = 0
     is_liked: bool = False
     ingredient_statuses: Optional[dict] = None
+    glaze_colors: Optional[str] = "[]"  # JSON: [{hex, r, g, b, name}]
 
     model_config = {"from_attributes": True}
 

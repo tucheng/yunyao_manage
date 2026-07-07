@@ -470,6 +470,102 @@ def list_works(
     return result
 
 
+@router.put("/{work_id}")
+def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
+    """更新作品"""
+    work = db.query(Work).filter(Work.id == work_id).first()
+    if not work:
+        raise HTTPException(status_code=404, detail="作品不存在")
+
+    user_id = data.get("user_id", 0)
+    if not user_id or work.user_id != user_id:
+        raise HTTPException(status_code=403, detail="无权编辑")
+
+    image = (data.get("image") or "").strip()
+    recipe_id = data.get("recipe_id") or None
+    description = data.get("description", "")
+    body_material = data.get("body_material", "")
+    kiln_type = data.get("kiln_type", "")
+    kiln_type_other = data.get("kiln_type_other", "")
+    temperature = data.get("temperature", "")
+    surface = data.get("surface", "")
+    transparency = data.get("transparency", "")
+    curve_id = data.get("curve_id") or None
+
+    # 处理多图
+    images_raw = data.get("images") or []
+    if isinstance(images_raw, str):
+        try:
+            images_raw = json.loads(images_raw)
+        except:
+            images_raw = []
+    if not isinstance(images_raw, list):
+        images_raw = [image] if image else []
+    if image and image not in images_raw:
+        images_raw.insert(0, image)
+
+    # 处理釉色
+    glaze_colors_raw = data.get("glaze_colors") or None
+    glaze_colors_json = "[]"
+    if glaze_colors_raw:
+        if isinstance(glaze_colors_raw, list):
+            hex_list = []
+            for c in glaze_colors_raw:
+                if isinstance(c, dict):
+                    hex_list.append(c.get("hex", ""))
+                elif isinstance(c, str):
+                    hex_list.append(c)
+                else:
+                    hex_list.append(str(c))
+            hex_list = [h for h in hex_list if h]
+            colors_data = get_glaze_colors_data(hex_list) if hex_list else []
+        elif isinstance(glaze_colors_raw, str):
+            try:
+                parsed = json.loads(glaze_colors_raw)
+                if isinstance(parsed, list):
+                    hex_list = []
+                    for c in parsed:
+                        if isinstance(c, dict):
+                            hex_list.append(c.get("hex", ""))
+                        elif isinstance(c, str):
+                            hex_list.append(c)
+                        else:
+                            hex_list.append(str(c))
+                    hex_list = [h for h in hex_list if h]
+                    colors_data = get_glaze_colors_data(hex_list) if hex_list else []
+                else:
+                    colors_data = []
+            except:
+                colors_data = []
+        else:
+            colors_data = []
+        glaze_colors_json = json.dumps(colors_data, ensure_ascii=False)
+
+    work.image = image
+    work.images = json.dumps(images_raw, ensure_ascii=False)
+    work.description = description
+    work.body_material = body_material
+    work.kiln_type = kiln_type
+    work.kiln_type_other = kiln_type_other
+    work.temperature = temperature
+    work.surface = surface
+    work.transparency = transparency
+    work.curve_id = curve_id
+    work.glaze_colors = glaze_colors_json
+    if recipe_id is not None:
+        old_recipe_id = work.recipe_id
+        work.recipe_id = recipe_id
+        if old_recipe_id != recipe_id:
+            if old_recipe_id:
+                db.query(Recipe).filter(Recipe.id == old_recipe_id).update({"work_count": Recipe.work_count - 1})
+            if recipe_id:
+                db.query(Recipe).filter(Recipe.id == recipe_id).update({"work_count": Recipe.work_count + 1})
+
+    db.commit()
+    db.refresh(work)
+    return {"id": work.id, "message": "更新成功"}
+
+
 @router.post("/")
 def create_work(
     data: dict,

@@ -469,6 +469,8 @@ def favorite_recipes(
                     "user_id": recipe.user_id,
                     "type": "recipe",
                     "title": recipe.title,
+                    "recipe_no": recipe.recipe_no or '',
+                    "category": recipe.category or '',
                     "cover": recipe.cover or (json.loads(recipe.images or '[]')[0] if recipe.images and recipe.images != '[]' else ''),
                     "author_name": user.nickname if user else '',
                     "price": recipe.price,
@@ -680,9 +682,10 @@ def get_recipe(
         if is_owner or is_purchaser:
             recipe.steps = decrypt(recipe.steps)
 
-    # 带上作者名
+    # 带上作者名和头像
     user = db.query(User).filter(User.id == recipe.user_id).first()
     recipe.author_name = user.nickname if user else f'用户{recipe.user_id}'
+    recipe.avatar = user.avatar if user else ''
 
     # 平均评分
     from sqlalchemy import func
@@ -731,6 +734,28 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
     if recipe.steps:
         steps = encrypt(recipe.steps) if recipe.visibility == "paid" else recipe.steps
 
+    # 处理釉色数据
+    glaze_colors_json = "[]"
+    if recipe.glaze_colors:
+        # 支持 JSON 字符串或数组
+        try:
+            raw = json.loads(recipe.glaze_colors) if isinstance(recipe.glaze_colors, str) else recipe.glaze_colors
+            if isinstance(raw, list):
+                from color_names import get_glaze_colors_data
+                hex_list = []
+                for c in raw:
+                    if isinstance(c, dict):
+                        hex_list.append(c.get("hex", ""))
+                    elif isinstance(c, str):
+                        hex_list.append(c)
+                    else:
+                        hex_list.append(str(c))
+                hex_list = [h for h in hex_list if h]
+                colors_data = get_glaze_colors_data(hex_list) if hex_list else []
+                glaze_colors_json = json.dumps(colors_data, ensure_ascii=False)
+        except (json.JSONDecodeError, TypeError):
+            glaze_colors_json = recipe.glaze_colors
+
     db_recipe = Recipe(
         user_id=user_id,
         title=recipe.title,
@@ -739,7 +764,7 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         cover=recipe.cover,
         images=recipe.images,
         steps=steps,
-        tips=recipe.tips,
+        describe=recipe.describe,
         category=recipe.category,
         temperature=recipe.temperature,
         atmosphere=recipe.atmosphere,
@@ -753,6 +778,7 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         contact=recipe.contact,
         visibility=recipe.visibility,
         forked_from=recipe.forked_from,
+        glaze_colors=glaze_colors_json,
     )
     db.add(db_recipe)
     db.commit()
@@ -789,6 +815,26 @@ def update_recipe(
     if db_recipe.visibility == "paid" or (update_data.get("visibility") == "paid"):
         if "steps" in update_data and update_data["steps"]:
             update_data["steps"] = encrypt(update_data["steps"])
+    # 处理釉色数据
+    if "glaze_colors" in update_data and update_data["glaze_colors"]:
+        gc = update_data["glaze_colors"]
+        try:
+            raw = json.loads(gc) if isinstance(gc, str) else gc
+            if isinstance(raw, list):
+                from color_names import get_glaze_colors_data
+                hex_list = []
+                for c in raw:
+                    if isinstance(c, dict):
+                        hex_list.append(c.get("hex", ""))
+                    elif isinstance(c, str):
+                        hex_list.append(c)
+                    else:
+                        hex_list.append(str(c))
+                hex_list = [h for h in hex_list if h]
+                colors_data = get_glaze_colors_data(hex_list) if hex_list else []
+                update_data["glaze_colors"] = json.dumps(colors_data, ensure_ascii=False)
+        except (json.JSONDecodeError, TypeError):
+            pass  # keep original value
     for key, value in update_data.items():
         setattr(db_recipe, key, value)
     db_recipe.updated_at = func.now()
