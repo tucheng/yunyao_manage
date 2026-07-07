@@ -48,3 +48,12 @@ ALLOW_DEV_CORS = os.getenv("ALLOW_DEV_CORS", "1") == "1"
 WX_APPID = os.getenv("WX_APPID", "")
 WX_SECRET = os.getenv("WX_SECRET", "")
 ENABLE_MOCK_LOGIN = os.getenv("ENABLE_MOCK_LOGIN", "1") == "1"
+
+# ===== 安全防护 =====
+
+# 管理后台 IP 白名单（逗号分隔），为空则不限制
+# 示例：ADMIN_ALLOWED_IPS=192.168.1.100,192.168.1.101
+ADMIN_ALLOWED_IPS = _split_csv(os.getenv("ADMIN_ALLOWED_IPS", ""))
+
+# 列表接口单页最大数量
+MAX_PAGE_SIZE = int(os.getenv("MAX_PAGE_SIZE", "50"))

@@ -14,12 +14,12 @@ from starlette.types import Receive, Scope, Send
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from app_config import ALLOW_DEV_CORS, CORS_ORIGINS
+from app_config import ALLOW_DEV_CORS, CORS_ORIGINS, ADMIN_ALLOWED_IPS, MAX_PAGE_SIZE
 from auth_utils import user_id_from_request
+from rate_limiter import RateLimiter
 from routes import (
     admin,
     auth,
-    body_materials,
     ceramic_materials,
     complaints,
     curves,
@@ -53,6 +53,8 @@ logging.basicConfig(
 logger = logging.getLogger("yunyao")
 logger.info("=== 服务启动 ===")
 
+_rate_limiter = RateLimiter()
+
 app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
@@ -71,6 +73,44 @@ async def log_requests(request: Request, call_next):
     cost = round((time.time() - start) * 1000)
     logger.info("%s %s %s %s %dms", request.method, request.url.path, client_ip, response.status_code, cost)
     return response
+
+
+@app.middleware("http")
+async def rate_limit_middleware(request: Request, call_next):
+    resp = _rate_limiter.check(request)
+    if resp:
+        return resp
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def admin_ip_whitelist(request: Request, call_next):
+    if ADMIN_ALLOWED_IPS and request.url.path.startswith(("/admin", "/admin-panel")):
+        client_ip = request.client.host if request.client else ""
+        if client_ip not in ADMIN_ALLOWED_IPS:
+            return Response(
+                json.dumps({"detail": "无权访问"}, ensure_ascii=False),
+                status_code=403,
+                media_type="application/json",
+            )
+    return await call_next(request)
+
+
+@app.middleware("http")
+async def cap_page_size(request: Request, call_next):
+    """限制列表接口单页最大数量"""
+    ps = request.query_params.get("page_size")
+    if ps:
+        try:
+            val = int(ps)
+            if val > MAX_PAGE_SIZE:
+                from starlette.datastructures import QueryParams
+                params = dict(request.query_params)
+                params["page_size"] = str(MAX_PAGE_SIZE)
+                request.scope["query_string"] = str(QueryParams(params)).encode("ascii")
+        except (ValueError, TypeError):
+            pass
+    return await call_next(request)
 
 
 def _requires_auth(path: str, method: str) -> bool:
@@ -144,7 +184,6 @@ app.include_router(wallet.router)
 app.include_router(materials.router)
 app.include_router(curves.router)
 app.include_router(social.router)
-app.include_router(body_materials.router)
 app.include_router(works.router)
 app.include_router(upload.router)
 app.include_router(work_comments.router)
