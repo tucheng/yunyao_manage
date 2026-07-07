@@ -209,7 +209,6 @@ def count_recipes(
     if keyword:
         query = query.filter(
             Recipe.title.contains(keyword)
-            | Recipe.tags.contains(keyword)
         )
     rows_query = _recipe_rows_with_work_counts(query)
     if not material and not materials and not has_work:
@@ -246,7 +245,6 @@ def list_recipes(
     if keyword:
         query = query.filter(
             Recipe.title.contains(keyword)
-            | Recipe.tags.contains(keyword)
             | Recipe.recipe_no.contains(keyword)
         )
 
@@ -381,10 +379,6 @@ def purchased_recipes(user_id: int = Query(...), db: Session = Depends(get_db)):
     ).all()
     recipe_ids = [p.recipe_id for p in purchases]
     recipes = db.query(Recipe).filter(Recipe.id.in_(recipe_ids)).all()
-    # 解密付费配方的加密数据
-    for r in recipes:
-        if r.visibility == "paid" and r.steps and r.steps != "[]":
-            r.steps = decrypt(r.steps)
     return recipes
 
 
@@ -641,12 +635,8 @@ def get_recipe(
                 Purchase.buyer_id == user_id,
                 Purchase.status == "confirmed",
             ).first()
-            if not purchase:
-                recipe.steps = "[]"
-            else:
+            if purchase:
                 recipe.is_purchased = True
-        else:
-            recipe.steps = "[]"
 
     # 收藏状态
     recipe.is_favorited = False
@@ -668,19 +658,6 @@ def get_recipe(
         if liked:
             recipe.is_liked = True
 
-    # 对授权用户解密付费配方数据
-    if recipe.visibility == "paid" and recipe.steps and recipe.steps != "[]":
-        is_owner = recipe.user_id == user_id
-        is_purchaser = False
-        if user_id > 0 and not is_owner:
-            purchase = db.query(Purchase).filter(
-                Purchase.recipe_id == recipe_id,
-                Purchase.buyer_id == user_id,
-                Purchase.status == "confirmed",
-            ).first()
-            is_purchaser = purchase is not None
-        if is_owner or is_purchaser:
-            recipe.steps = decrypt(recipe.steps)
 
     # 带上作者名和头像
     user = db.query(User).filter(User.id == recipe.user_id).first()
@@ -729,11 +706,6 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
     # 等级和数量校验
     check_publish_limits(db, user_id, recipe_price=recipe.price or 0)
 
-    # 付费配方：加密原料和步骤
-    steps = recipe.steps
-    if recipe.steps:
-        steps = encrypt(recipe.steps) if recipe.visibility == "paid" else recipe.steps
-
     # 处理釉色数据
     glaze_colors_json = "[]"
     if recipe.glaze_colors:
@@ -763,7 +735,6 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         type=recipe.type,
         cover=recipe.cover,
         images=recipe.images,
-        steps=steps,
         describe=recipe.describe,
         category=recipe.category,
         temperature=recipe.temperature,
@@ -771,7 +742,6 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         kiln_type=recipe.kiln_type,
         kiln_type_other=recipe.kiln_type_other,
         body_material=recipe.body_material,
-        tags=recipe.tags,
         price=recipe.price,
         turnaround=recipe.turnaround,
         reward=recipe.reward,
@@ -811,10 +781,6 @@ def update_recipe(
     if new_price > 0 and (db_recipe.price or 0) == 0:
         check_paid_switch(db, user_id, recipe_id)
 
-    # 付费配方：加密步骤
-    if db_recipe.visibility == "paid" or (update_data.get("visibility") == "paid"):
-        if "steps" in update_data and update_data["steps"]:
-            update_data["steps"] = encrypt(update_data["steps"])
     # 处理釉色数据
     if "glaze_colors" in update_data and update_data["glaze_colors"]:
         gc = update_data["glaze_colors"]

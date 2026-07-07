@@ -37,7 +37,6 @@ class Recipe(Base):
     type = Column(String(20), default="recipe")  # recipe / firing / matching
     cover = Column(String(200), default="")
     images = Column(Text, default="[]")  # JSON: 多图URL，烧制作品/找配方参考图
-    steps = Column(Text, default="[]")
     describe = Column(Text, default="")
     category = Column(String(30), default="")
     temperature = Column(String(30), default="")
@@ -45,7 +44,6 @@ class Recipe(Base):
     kiln_type = Column(String(30), default="")  # 电窑 / 气窑 / 柴窑 / 乐烧
     kiln_type_other = Column(String(50), default="")  # 自定义窑炉类型
     body_material = Column(String(30), default="")  # 坯体料类型
-    tags = Column(String(200), default="")
     price = Column(Integer, default=0)  # 分，0=免费
     # 烧制服务专用
     turnaround = Column(String(50), default="")  # 周转时间，如"3-5天"

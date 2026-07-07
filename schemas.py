@@ -8,7 +8,6 @@ class RecipeCreate(BaseModel):
     type: str = "recipe"  # recipe / firing / matching
     cover: str = ""
     images: str = "[]"
-    steps: str = "[]"
     describe: str = ""
     category: str = ""
     temperature: str = ""
@@ -16,7 +15,6 @@ class RecipeCreate(BaseModel):
     kiln_type: str = ""
     kiln_type_other: str = ""
     body_material: str = ""
-    tags: str = ""
     price: int = 0
     turnaround: str = ""
     reward: int = 0
@@ -32,7 +30,6 @@ class RecipeUpdate(BaseModel):
     type: Optional[str] = None
     cover: Optional[str] = None
     images: Optional[str] = None
-    steps: Optional[str] = None
     describe: Optional[str] = None
     category: Optional[str] = None
     temperature: Optional[str] = None
@@ -40,7 +37,6 @@ class RecipeUpdate(BaseModel):
     kiln_type: Optional[str] = None
     kiln_type_other: Optional[str] = None
     body_material: Optional[str] = None
-    tags: Optional[str] = None
     price: Optional[int] = None
     turnaround: Optional[str] = None
     reward: Optional[int] = None
@@ -57,7 +53,6 @@ class RecipeOut(BaseModel):
     type: Optional[str] = "recipe"
     cover: Optional[str] = ""
     images: Optional[str] = "[]"
-    steps: Optional[str] = "[]"
     describe: Optional[str] = ""
     category: Optional[str] = ""
     temperature: Optional[str] = ""
@@ -65,7 +60,6 @@ class RecipeOut(BaseModel):
     kiln_type: Optional[str] = ""
     kiln_type_other: Optional[str] = ""
     body_material: Optional[str] = ""
-    tags: Optional[str] = ""
     price: Optional[int] = 0
     turnaround: Optional[str] = ""
     reward: Optional[int] = 0
