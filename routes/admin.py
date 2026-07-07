@@ -9,6 +9,7 @@ from pydantic import BaseModel
 from typing import Optional
 from app_config import ADMIN_TOKEN, ADMIN_USER_IDS
 from auth_utils import decode_access_token, hash_password, verify_password
+from encryption_utils import decrypt
 from verification_sender import get_settings as get_verification_settings, save_settings as save_verification_settings
 from color_names import get_color_range_config
 from routes.works import TEMPERATURE_RANGE_CONFIG
@@ -48,9 +49,9 @@ def verify_admin(token: str = Query(...)):
 @router.post("/login")
 def admin_login(body: AdminLoginRequest, db: Session = Depends(get_db)):
     uname = body.username.strip()
-    user = db.query(User).filter(
-        (User.username == uname) | (User.email == uname) | (User.phone == uname)
-    ).first()
+    user = db.query(User).filter(User.username == uname).first()
+    if not user:
+        user = User.by_email_or_phone(db, uname)
     if not user:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     ok, _ = verify_password(body.password, user.password_hash if user else "")
@@ -79,7 +80,6 @@ def list_users(q: str = "", page: int = 1, page_size: int = Query(default=20, al
         qry = qry.filter(
             User.nickname.like(f"%{q}%")
             | User.username.like(f"%{q}%")
-            | User.email.like(f"%{q}%")
         )
 
     total = qry.count()

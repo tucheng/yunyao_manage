@@ -1,7 +1,8 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
 from sqlalchemy.orm import Session
-from models import AppSetting
+from auth_utils import get_current_user
 from database import get_db
+from encryption_utils import encrypt, decrypt, hash_for_lookup
 from models import User, UserLevel, Recipe, Work, Follow, Favorite, FiringCurve, ToBeFired
 from auth_utils import get_current_user
 import json
@@ -98,8 +99,8 @@ def get_my_profile(request: Request, db: Session = Depends(get_db)):
         "gender": user.gender or "",
         "birthday": user.birthday or "",
         "location": user.location or "",
-        "phone": user.phone or "",
-        "email": user.email or "",
+        "phone": decrypt(user.phone or "") or "",
+        "email": decrypt(user.email or "") or "",
         "balance": user.balance or 0,
         "level_id": user.level_id or 1,
         "level_name": level.name if level else "普通用户",
@@ -136,17 +137,25 @@ def update_profile(
     if phone is not None:
         phone_val = phone.strip()
         if phone_val:
-            existing = db.query(User).filter(User.phone == phone_val, User.id != user.id).first()
-            if existing:
+            existing = User.by_phone(db, phone_val)
+            if existing and existing.id != user.id:
                 raise HTTPException(status_code=400, detail="该手机号已被其他账号绑定")
-        user.phone = phone_val or None
+            user.phone = encrypt(phone_val)
+            user.phone_hash = hash_for_lookup(phone_val)
+        else:
+            user.phone = None
+            user.phone_hash = None
     if email is not None:
         email_val = email.strip()
         if email_val:
-            existing = db.query(User).filter(User.email == email_val, User.id != user.id).first()
-            if existing:
+            existing = User.by_email(db, email_val)
+            if existing and existing.id != user.id:
                 raise HTTPException(status_code=400, detail="该邮箱已被其他账号绑定")
-        user.email = email_val or None
+            user.email = encrypt(email_val)
+            user.email_hash = hash_for_lookup(email_val)
+        else:
+            user.email = None
+            user.email_hash = None
 
     gender = data.get("gender")
     if gender is not None:
@@ -168,8 +177,8 @@ def update_profile(
         "gender": user.gender or "",
         "birthday": user.birthday or "",
         "location": user.location or "",
-        "phone": user.phone or "",
-        "email": user.email or "",
+        "phone": decrypt(user.phone or "") or "",
+        "email": decrypt(user.email or "") or "",
     }
 
 

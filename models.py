@@ -10,8 +10,10 @@ class User(Base):
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(100), unique=True, nullable=True)
     openid = Column(String(100), unique=True, index=True, nullable=False)
-    email = Column(String(100), unique=True, nullable=True)
-    phone = Column(String(20), unique=True, nullable=True)
+    email = Column(String(200), unique=True, nullable=True)  # 加密存储
+    phone = Column(String(200), unique=True, nullable=True)  # 加密存储
+    email_hash = Column(String(64), unique=True, nullable=True, index=True)  # SHA-256，用于查询
+    phone_hash = Column(String(64), unique=True, nullable=True, index=True)  # SHA-256，用于查询
     password_hash = Column(String(200), default="")
     nickname = Column(String(50), default="")
     avatar = Column(String(200), default="")
@@ -25,6 +27,28 @@ class User(Base):
     is_muted = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+    @classmethod
+    def by_email(cls, db, email: str):
+        """通过邮箱查找用户（使用哈希匹配）"""
+        from encryption_utils import hash_for_lookup
+        h = hash_for_lookup(email)
+        return db.query(cls).filter(cls.email_hash == h).first() if h else None
+
+    @classmethod
+    def by_phone(cls, db, phone: str):
+        """通过手机号查找用户（使用哈希匹配）"""
+        from encryption_utils import hash_for_lookup
+        h = hash_for_lookup(phone)
+        return db.query(cls).filter(cls.phone_hash == h).first() if h else None
+
+    @classmethod
+    def by_email_or_phone(cls, db, value: str):
+        """通过邮箱或手机号查找用户"""
+        user = cls.by_email(db, value)
+        if not user:
+            user = cls.by_phone(db, value)
+        return user
 
 
 class Recipe(Base):
@@ -137,17 +161,6 @@ class FiringCurve(Base):
     description = Column(Text, default="")
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-
-class BodyMaterial(Base):
-    """坯体料类型（后台配置）"""
-    __tablename__ = "body_materials"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(50), nullable=False, unique=True)
-    sort_order = Column(Integer, default=0)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
 
 
 class Work(Base):

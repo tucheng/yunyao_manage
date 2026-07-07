@@ -16,6 +16,7 @@ from sqlalchemy.orm import Session
 from app_config import ENABLE_MOCK_LOGIN, WX_APPID, WX_SECRET
 from auth_utils import auth_payload, hash_password, verify_password, token_from_request, decode_access_token, user_role
 from database import get_db
+from encryption_utils import encrypt, hash_for_lookup
 from models import User
 from verification_sender import get_settings as get_verification_settings, send_verification_code
 
@@ -178,10 +179,8 @@ def find_user(body: FindUserRequest, db: Session = Depends(get_db)):
     email = body.email.strip().lower() if body.email else ""
     if not uname or not email:
         raise HTTPException(status_code=400, detail="请填写用户名和邮箱")
-    user = db.query(User).filter(
-        User.username == uname, User.email == email
-    ).first()
-    if user:
+    user = User.by_email(db, email)
+    if user and user.username == uname:
         return {"found": True, "message": "已找到您的账号"}
     return {"found": False, "message": "未找到匹配的用户名和邮箱"}
 
@@ -249,17 +248,21 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     _captcha_codes.pop(body.captcha_id, None)
 
     # ===== 第二步：唯一性校验 =====
-    if email and db.query(User).filter(User.email == email).first():
+    if email and User.by_email(db, email):
         raise HTTPException(status_code=400, detail="该邮箱已注册")
-    if phone and db.query(User).filter(User.phone == phone).first():
+    if phone and User.by_phone(db, phone):
         raise HTTPException(status_code=400, detail="该手机号已注册")
     if db.query(User).filter(User.username == username).first():
         raise HTTPException(status_code=400, detail="该用户名已被使用")
 
+    enc_email = encrypt(email) if email else None
+    enc_phone = encrypt(phone) if phone else None
     user = User(
         openid=f"email_{email}" if email else f"phone_{phone}",
-        email=email or None,
-        phone=phone or None,
+        email=enc_email,
+        phone=enc_phone,
+        email_hash=hash_for_lookup(email) if email else None,
+        phone_hash=hash_for_lookup(phone) if phone else None,
         password_hash=hash_password(password),
         username=username,
         nickname=username,
@@ -283,35 +286,34 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         email, phone, target_key = _normalize_verification_target(email, phone, db)
         _verify_code(target_key, verification_code)
         if email:
-            user = db.query(User).filter(User.email == email).first()
+            user = User.by_email(db, email)
             if not user:
                 raise HTTPException(status_code=404, detail="该邮箱未注册")
         else:
-            user = db.query(User).filter(User.phone == phone).first()
+            user = User.by_phone(db, phone)
             if not user:
                 raise HTTPException(status_code=404, detail="该手机号未注册")
         return auth_payload(user)
 
     if email and password:
-        user = db.query(User).filter(User.email == email).first()
+        user = User.by_email(db, email)
         ok, upgrade_hash = verify_password(password, user.password_hash if user else "")
         if not user or not ok:
             raise HTTPException(status_code=401, detail="邮箱或密码错误")
         return _login_response(user, db, password, upgrade_hash)
 
     if phone and password:
-        user = db.query(User).filter(User.phone == phone).first()
+        user = User.by_phone(db, phone)
         ok, upgrade_hash = verify_password(password, user.password_hash if user else "")
         if not user or not ok:
             raise HTTPException(status_code=401, detail="手机号或密码错误")
         return _login_response(user, db, password, upgrade_hash)
 
     if body.username and password:
-        # 支持用户名登录
         uname = body.username.strip()
-        user = db.query(User).filter(
-            (User.username == uname) | (User.email == uname) | (User.phone == uname)
-        ).first()
+        user = db.query(User).filter(User.username == uname).first()
+        if not user:
+            user = User.by_email_or_phone(db, uname)
         ok, upgrade_hash = verify_password(password, user.password_hash if user else "")
         if not user or not ok:
             raise HTTPException(status_code=401, detail="用户名或密码错误")
@@ -376,7 +378,7 @@ def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
     if not re.match(r"^[^@\s]+@[^@\s]+\.[^@\s]+$", email):
         raise HTTPException(status_code=400, detail="邮箱格式不正确")
 
-    user = db.query(User).filter(User.email == email).first()
+    user = User.by_email(db, email)
     if not user:
         raise HTTPException(status_code=404, detail="该邮箱未注册")
 
