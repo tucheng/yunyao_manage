@@ -180,8 +180,21 @@ def _serialize_recipe_list_item(recipe, nickname, avatar, work_count=0, work_ima
 def recipe_search_config(db: Session = Depends(get_db)):
     rows = db.query(IngredientName.name).order_by(IngredientName.name).all()
     material_names = [r[0] for r in rows]
+
+    # 筛选项
+    kiln_types = [r[0] for r in db.query(Recipe.kiln_type).filter(Recipe.kiln_type != "", Recipe.kiln_type.isnot(None), Recipe.visibility.in_(["public", "paid", "showoff"])).distinct().order_by(Recipe.kiln_type).all()]
+    surfaces = [r[0] for r in db.query(Recipe.surface).filter(Recipe.surface != "", Recipe.surface.isnot(None), Recipe.visibility.in_(["public", "paid", "showoff"])).distinct().order_by(Recipe.surface).all()]
+    transparencies = [r[0] for r in db.query(Recipe.transparency).filter(Recipe.transparency != "", Recipe.transparency.isnot(None), Recipe.visibility.in_(["public", "paid", "showoff"])).distinct().order_by(Recipe.transparency).all()]
+    colors = [r[0] for r in db.query(Recipe.color).filter(Recipe.color != "", Recipe.color.isnot(None), Recipe.visibility.in_(["public", "paid", "showoff"])).distinct().order_by(Recipe.color).all()]
+    temperatures = [r[0] for r in db.query(Recipe.temperature).filter(Recipe.temperature != "", Recipe.temperature.isnot(None), Recipe.visibility.in_(["public", "paid", "showoff"])).distinct().order_by(Recipe.temperature).all()]
+
     return {
         "materials": material_names,
+        "kiln_types": kiln_types,
+        "surfaces": surfaces,
+        "transparencies": transparencies,
+        "temperatures": temperatures,
+        "colors": colors,
         "has_work_options": [
             {"value": "yes", "label": "有作品"},
             {"value": "no", "label": "无作品"},
@@ -518,6 +531,11 @@ def search(
     q: str = "",
     body_material: str = "",
     kiln_type: str = "",
+    surface: str = "",
+    transparency: str = "",
+    color: str = "",
+    temperature: str = "",
+    has_images: str = "",  # "1"=有图 "0"=无图
     author_id: int = 0,
     user_id: int = 0,
     page: int = 1,
@@ -535,12 +553,28 @@ def search(
     )
     if keyword:
         recipe_query = recipe_query.filter(
-            Recipe.recipe_no == keyword
+            (Recipe.recipe_no == keyword) | (Recipe.title.contains(keyword))
         )
     if body_material:
         recipe_query = recipe_query.filter(Recipe.body_material == body_material)
     if kiln_type:
         recipe_query = recipe_query.filter(Recipe.kiln_type == kiln_type)
+    if surface:
+        recipe_query = recipe_query.filter(Recipe.surface == surface)
+    if transparency:
+        recipe_query = recipe_query.filter(Recipe.transparency == transparency)
+    if color:
+        recipe_query = recipe_query.filter(Recipe.color == color)
+    if temperature:
+        recipe_query = recipe_query.filter(Recipe.temperature == temperature)
+    if has_images == "1":
+        recipe_query = recipe_query.filter(
+            (Recipe.cover != "") | (Recipe.images.isnot(None)) | (Recipe.images != "[]")
+        )
+    elif has_images == "0":
+        recipe_query = recipe_query.filter(
+            (Recipe.cover == "") & ((Recipe.images.is_(None)) | (Recipe.images == "[]"))
+        )
     if author_id:
         recipe_query = recipe_query.filter(Recipe.user_id == author_id)
 
