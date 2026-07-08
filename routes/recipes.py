@@ -622,7 +622,9 @@ def get_recipe(
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="不存在")
-    current_user_id = user_id_from_request(request) or 0
+    current_user_id = user_id_from_request(request)
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="请先登录")
 
     # 私密配方：只有作者可看
     if recipe.visibility == "private" and recipe.user_id != current_user_id:
