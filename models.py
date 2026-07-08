@@ -87,6 +87,7 @@ class Recipe(Base):
     surface = Column(String(30), default="")  # 釉面质感
     transparency = Column(String(30), default="")  # 透明度
     glaze_colors = Column(Text, default="[]")  # JSON: [{hex, r, g, b, name}]
+    color = Column(String(50), default="")  # 釉色名称
 
 
 class Purchase(Base):

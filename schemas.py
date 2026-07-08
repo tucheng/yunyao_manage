@@ -88,6 +88,7 @@ class RecipeOut(BaseModel):
     is_liked: bool = False
     ingredient_statuses: Optional[dict] = None
     glaze_colors: Optional[str] = "[]"  # JSON: [{hex, r, g, b, name}]
+    color: Optional[str] = ""
 
     model_config = {"from_attributes": True}
 
