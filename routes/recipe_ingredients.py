@@ -1,8 +1,9 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy import text, func
 from sqlalchemy.orm import Session
 from database import get_db
 from auth_utils import user_id_from_request
-from models import Purchase, RecipeIngredient, Recipe
+from models import Purchase, RecipeIngredient, Recipe, IngredientName
 from schemas import RecipeIngredientOut
 from security import encrypt, decrypt, hash_for_lookup
 
@@ -94,6 +95,15 @@ def save_ingredients(
             sort_order=item.get("sort_order", i),
         )
         db.add(ing)
+
+    # 同步公开配料名索引
+    all_names = set()
+    for item in ingredients:
+        raw_name = (item.get("name") or "").strip()
+        if raw_name:
+            all_names.add(raw_name)
+    for name in all_names:
+        db.execute(text("INSERT IGNORE INTO ingredient_names (name) VALUES (:name)"), {"name": name})
 
     db.commit()
 

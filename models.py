@@ -237,6 +237,14 @@ class RecipeIngredient(Base):
     sort_order = Column(Integer, default=0)
 
 
+class IngredientName(Base):
+    """公开配料名索引（明文，仅用于搜索下拉列表）"""
+    __tablename__ = "ingredient_names"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), unique=True, nullable=False)
+
+
 class Like(Base):
     """点赞记录（通用：配方/作品）"""
     __tablename__ = "likes"

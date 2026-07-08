@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import Recipe, User, Purchase, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient
+from models import Recipe, User, Purchase, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName
 from schemas import (
     RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
     PurchaseCreate, PurchaseOut, ReviewCreate, ReviewOut,
@@ -178,14 +178,8 @@ def _serialize_recipe_list_item(recipe, nickname, avatar, work_count=0, work_ima
 
 @router.get("/search/config")
 def recipe_search_config(db: Session = Depends(get_db)):
-    rows = _public_recipe_query(db).all()
-    material_names = []
-    seen = set()
-    for recipe in rows:
-        for name in _recipe_ingredient_names(recipe.id, db):
-            if name not in seen:
-                seen.add(name)
-                material_names.append(name)
+    rows = db.query(IngredientName.name).order_by(IngredientName.name).all()
+    material_names = [r[0] for r in rows]
     return {
         "materials": material_names,
         "has_work_options": [
