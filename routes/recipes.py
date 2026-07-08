@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import Recipe, User, Purchase, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient
@@ -7,7 +7,7 @@ from schemas import (
     PurchaseCreate, PurchaseOut, ReviewCreate, ReviewOut,
 )
 from security import encrypt, decrypt
-from level_check import check_publish_limits, check_paid_switch
+from auth_utils import user_id_from_request
 from sqlalchemy import text, func
 import json
 
@@ -615,24 +615,26 @@ def get_recipe_by_no(recipe_no: str, db: Session = Depends(get_db)):
 @router.get("/{recipe_id}", response_model=RecipeOut)
 def get_recipe(
     recipe_id: int,
+    request: Request,
     user_id: int = 0,
     db: Session = Depends(get_db),
 ):
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="不存在")
+    current_user_id = user_id_from_request(request) or 0
 
     # 私密配方：只有作者可看
-    if recipe.visibility == "private" and recipe.user_id != user_id:
+    if recipe.visibility == "private" and recipe.user_id != current_user_id:
         raise HTTPException(status_code=404, detail="不存在")
 
     # 付费/显摆模式：隐藏原料和步骤
     recipe.is_purchased = False
-    if recipe.type == "recipe" and recipe.visibility in ("paid", "showoff") and recipe.user_id != user_id:
-        if user_id > 0:
+    if recipe.type == "recipe" and recipe.visibility in ("paid", "showoff") and recipe.user_id != current_user_id:
+        if current_user_id > 0:
             purchase = db.query(Purchase).filter(
                 Purchase.recipe_id == recipe_id,
-                Purchase.buyer_id == user_id,
+                Purchase.buyer_id == current_user_id,
                 Purchase.status == "confirmed",
             ).first()
             if purchase:
@@ -640,20 +642,20 @@ def get_recipe(
 
     # 收藏状态
     recipe.is_favorited = False
-    if user_id > 0:
+    if current_user_id > 0:
         fav = db.query(Favorite).filter(
             Favorite.recipe_id == recipe_id,
-            Favorite.user_id == user_id,
+            Favorite.user_id == current_user_id,
         ).first()
         if fav:
             recipe.is_favorited = True
 
     # 点赞状态
     recipe.is_liked = False
-    if user_id > 0:
+    if current_user_id > 0:
         liked = db.query(Like).filter(
             Like.recipe_id == recipe_id,
-            Like.user_id == user_id,
+            Like.user_id == current_user_id,
         ).first()
         if liked:
             recipe.is_liked = True
@@ -684,10 +686,10 @@ def get_recipe(
 
     # 原料状态表（减少前端的额外查询）
     recipe.ingredient_statuses = {}
-    if user_id > 0:
+    if current_user_id > 0:
         from models import UserMaterial
         materials = db.query(UserMaterial).filter(
-            UserMaterial.user_id == user_id,
+            UserMaterial.user_id == current_user_id,
         ).all()
         for m in materials:
             recipe.ingredient_statuses[m.name.strip().lower()] = m.status
@@ -702,9 +704,6 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-
-    # 等级和数量校验
-    check_publish_limits(db, user_id, recipe_price=recipe.price or 0)
 
     # 处理釉色数据
     glaze_colors_json = "[]"
@@ -742,6 +741,8 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         kiln_type=recipe.kiln_type,
         kiln_type_other=recipe.kiln_type_other,
         body_material=recipe.body_material,
+        surface=recipe.surface,
+        transparency=recipe.transparency,
         price=recipe.price,
         turnaround=recipe.turnaround,
         reward=recipe.reward,
@@ -775,11 +776,6 @@ def update_recipe(
         raise HTTPException(status_code=403, detail="无权修改")
 
     update_data = recipe.model_dump(exclude_unset=True)
-
-    # 从免费改付费时校验等级
-    new_price = update_data.get("price", db_recipe.price) or 0
-    if new_price > 0 and (db_recipe.price or 0) == 0:
-        check_paid_switch(db, user_id, recipe_id)
 
     # 处理釉色数据
     if "glaze_colors" in update_data and update_data["glaze_colors"]:

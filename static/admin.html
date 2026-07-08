@@ -62,6 +62,21 @@ tr:hover { background: #f8f8f8; }
 .config-table input, .config-table textarea { width: 100%; padding: 7px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; }
 .config-table textarea { min-height: 54px; resize: vertical; }
 .config-table .narrow { width: 84px; }
+.attr-tab { padding: 8px 16px; font-size: 13px; border: none; background: transparent; color: #666; cursor: pointer; border-radius: 8px 8px 0 0; margin-bottom: -2px; font-weight: 500; transition: all 0.15s; }
+.attr-tab:hover { background: #f5f3f0; color: #333; }
+.attr-tab-active { background: #fff; color: #8B6914; border: 2px solid #e8e4df; border-bottom-color: #fff; font-weight: 600; }
+.attr-tab-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+.attr-tab-header h3 { font-size: 15px; margin: 0; }
+.attr-batch-add { display: flex; gap: 8px; margin-bottom: 10px; align-items: flex-start; }
+.attr-batch-add textarea { flex: 1; padding: 7px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; resize: vertical; min-height: 40px; }
+.attr-list { min-height: 30px; }
+.attr-item { display: flex; align-items: center; gap: 6px; padding: 6px 8px; margin-bottom: 4px; background: #fafafa; border: 1px solid #eee; border-radius: 6px; transition: background 0.15s; }
+.attr-item:hover { background: #f5f3f0; }
+.attr-item.attr-dragging { opacity: 0.4; background: #e8e4df; }
+.attr-drag-handle { cursor: grab; color: #bbb; font-size: 18px; line-height: 1; user-select: none; flex-shrink: 0; width: 20px; text-align: center; }
+.attr-drag-handle:active { cursor: grabbing; }
+.attr-item-input { flex: 1; border: 1px solid transparent; background: transparent; padding: 5px 6px; border-radius: 4px; font-size: 13px; outline: none; }
+.attr-item-input:focus { border-color: #ccc; background: #fff; }
 </style>
 </head>
 <body>
@@ -713,91 +728,156 @@ const ATTR_CATEGORIES = {
 function loadWorkAttributes() {
   api('/admin/work-attributes').then(grouped => {
     const container = document.getElementById('attrConfigContainer');
-    container.innerHTML = '';
-    for (const [cat, catLabel] of Object.entries(ATTR_CATEGORIES)) {
-      const items = grouped[cat] || [];
-      const div = document.createElement('div');
-      div.style.marginBottom = '20px';
-      div.innerHTML = `
-        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">
-          <h3 style="font-size:15px;margin:0">${esc(catLabel)} <span style="color:#999;font-weight:400;font-size:12px">(${cat})</span></h3>
-          <button class="btn btn-sm btn-primary" onclick="addAttrOption('${cat}')">+ 添加</button>
-        </div>
-        <table class="config-table">
-          <thead><tr><th style="width:60px">排序</th><th>选项值</th><th style="width:80px">操作</th></tr></thead>
-          <tbody id="attr-tbody-${cat}">
-            ${items.map(opt => `
-              <tr data-id="${opt.id}" data-cat="${cat}">
-                <td><input class="narrow" type="number" value="${opt.sort_order}" data-field="sort_order"></td>
-                <td><input type="text" value="${escAttr(opt.value)}" data-field="value" style="width:100%"></td>
-                <td><button class="btn btn-danger btn-sm" onclick="deleteAttrOption(this)">删除</button></td>
-              </tr>
-            `).join('')}
-            <tr id="attr-newrow-${cat}" style="display:none">
-              <td><input class="narrow" type="number" value="99" data-field="sort_order"></td>
-              <td><input type="text" placeholder="输入新选项..." data-field="value" style="width:100%"></td>
-              <td><button class="btn btn-sm btn-primary" onclick="saveNewAttr('${cat}')">保存</button>
-                  <button class="btn btn-sm" onclick="cancelNewAttr('${cat}')">取消</button></td>
-            </tr>
-          </tbody>
-        </table>
-      `;
-      container.appendChild(div);
+    const cats = Object.entries(ATTR_CATEGORIES);
+    let activeCat = container._activeCat || cats[0][0];
+    if (!ATTR_CATEGORIES[activeCat]) activeCat = cats[0][0];
+
+    let html = '<div style="display:flex;gap:4px;margin-bottom:16px;flex-wrap:wrap;border-bottom:2px solid #e8e4df;padding-bottom:0">';
+    for (const [cat, label] of cats) {
+      const count = (grouped[cat] || []).length;
+      html += `<button class="attr-tab ${cat === activeCat ? 'attr-tab-active' : ''}" data-cat="${cat}">${esc(label)} (${count})</button>`;
     }
-    container.innerHTML += '<button class="btn btn-primary" onclick="saveAllAttributes()">保存全部修改</button>';
+    html += '</div>';
+
+    for (const [cat, label] of cats) {
+      const items = grouped[cat] || [];
+      html += `<div class="attr-panel" data-cat="${cat}" style="display:${cat === activeCat ? 'block' : 'none'}">
+        <div class="attr-tab-header"><h3>${esc(label)}</h3></div>
+        <div class="attr-batch-add">
+          <textarea id="attr-batch-${cat}" rows="2" placeholder="每行一个选项，批量添加..."></textarea>
+          <button class="btn btn-sm btn-primary" onclick="batchAddAttr('${cat}')">+ 添加</button>
+        </div>
+        <div class="attr-list" id="attr-list-${cat}">
+          ${items.map((opt, idx) => `
+            <div class="attr-item" draggable="true" data-id="${opt.id}" data-cat="${cat}" data-sort="${opt.sort_order}">
+              <span class="attr-drag-handle" draggable="true">⠿</span>
+              <input type="text" class="attr-item-input" value="${escAttr(opt.value)}" data-field="value">
+              <button class="btn btn-danger btn-sm" onclick="deleteAttrOption(this)">✕</button>
+            </div>
+          `).join('')}
+        </div>
+      </div>`;
+    }
+    html += '<div style="margin-top:12px;display:flex;gap:8px"><button class="btn btn-primary" onclick="saveAllAttributes()">保存全部修改</button></div>';
+    container.innerHTML = html;
+
+    // 切页签
+    container.querySelectorAll('.attr-tab').forEach(btn => {
+      btn.addEventListener('click', function() {
+        container.querySelectorAll('.attr-tab').forEach(b => b.classList.remove('attr-tab-active'));
+        this.classList.add('attr-tab-active');
+        const cat = this.dataset.cat;
+        container.querySelectorAll('.attr-panel').forEach(p => p.style.display = p.dataset.cat === cat ? 'block' : 'none');
+        container._activeCat = cat;
+      });
+    });
+
+    // 拖拽排序
+    container.querySelectorAll('.attr-list').forEach(list => {
+      list.addEventListener('dragstart', function(e) {
+        const item = e.target.closest('.attr-item');
+        if (!item) return;
+        e.dataTransfer.setData('text/plain', item.dataset.id);
+        item.classList.add('attr-dragging');
+      });
+      list.addEventListener('dragend', function(e) {
+        const item = e.target.closest('.attr-item');
+        if (item) item.classList.remove('attr-dragging');
+      });
+      list.addEventListener('dragover', function(e) {
+        e.preventDefault();
+        const dragging = list.querySelector('.attr-dragging');
+        if (!dragging) return;
+        const after = getDragAfterElement(list, e.clientY);
+        if (after) {
+          list.insertBefore(dragging, after);
+        } else {
+          list.appendChild(dragging);
+        }
+      });
+    });
   }).catch(e => toast(e.message, 'error'));
 }
 
-function addAttrOption(cat) {
-  document.getElementById('attr-newrow-' + cat).style.display = '';
+function getDragAfterElement(container, y) {
+  const items = [...container.querySelectorAll('.attr-item:not(.attr-dragging)')];
+  return items.reduce((closest, child) => {
+    const box = child.getBoundingClientRect();
+    const offset = y - box.top - box.height / 2;
+    if (offset < 0 && offset > closest.offset) {
+      return { offset: offset, element: child };
+    }
+    return closest;
+  }, { offset: Number.NEGATIVE_INFINITY }).element;
 }
 
-function cancelNewAttr(cat) {
-  const row = document.getElementById('attr-newrow-' + cat);
-  row.style.display = 'none';
-  row.querySelector('[data-field="value"]').value = '';
-}
-
-function saveNewAttr(cat) {
-  const row = document.getElementById('attr-newrow-' + cat);
-  const value = row.querySelector('[data-field="value"]').value.trim();
-  const sortOrder = parseInt(row.querySelector('[data-field="sort_order"]').value) || 99;
-  if (!value) { toast('请输入选项值', 'error'); return; }
-  api('/admin/work-attributes', {
-    method: 'POST',
-    body: JSON.stringify({ category: cat, value, sort_order: sortOrder }),
-  }).then(() => {
-    toast('已添加');
-    loadWorkAttributes();
-  }).catch(e => toast(e.message, 'error'));
+function batchAddAttr(cat) {
+  const ta = document.getElementById('attr-batch-' + cat);
+  const lines = ta.value.split('\n').map(s => s.trim()).filter(s => s);
+  if (!lines.length) { toast('请输入选项值', 'error'); return; }
+  ta.value = '';
+  const list = document.getElementById('attr-list-' + cat);
+  lines.forEach(line => {
+    const div = document.createElement('div');
+    div.className = 'attr-item';
+    div.draggable = true;
+    div.dataset.cat = cat;
+    div.innerHTML = '<span class="attr-drag-handle" draggable="true">⠿</span>'
+      + '<input type="text" class="attr-item-input" value="' + escAttr(line) + '" data-field="value">'
+      + '<button class="btn btn-danger btn-sm" onclick="deleteAttrOption(this)">✕</button>';
+    list.appendChild(div);
+    // 给新项加拖拽事件
+    div.addEventListener('dragstart', function(e) {
+      e.dataTransfer.setData('text/plain', '');
+      div.classList.add('attr-dragging');
+    });
+    div.addEventListener('dragend', function() {
+      div.classList.remove('attr-dragging');
+    });
+  });
+  toast('已添加 ' + lines.length + ' 项，点击「保存全部修改」持久化');
 }
 
 function deleteAttrOption(btn) {
   if (!confirm('确定删除此选项？')) return;
-  const tr = btn.closest('tr');
-  const id = tr.dataset.id;
-  if (!id) return;
+  const item = btn.closest('.attr-item');
+  const id = item && item.dataset.id;
+  if (!id) { item.remove(); return; }
   api('/admin/work-attributes/' + id, { method: 'DELETE' })
     .then(() => {
       toast('已删除');
-      tr.remove();
+      item.remove();
     }).catch(e => toast(e.message, 'error'));
 }
 
 function saveAllAttributes() {
   const promises = [];
-  document.querySelectorAll('#attrConfigContainer tbody tr[data-id]').forEach(tr => {
-    const id = tr.dataset.id;
-    const cat = tr.dataset.cat;
-    const value = tr.querySelector('[data-field="value"]').value.trim();
-    const sortOrder = parseInt(tr.querySelector('[data-field="sort_order"]').value) || 0;
-    if (!value) return;
-    promises.push(
-      api('/admin/work-attributes/' + id, {
-        method: 'PUT',
-        body: JSON.stringify({ category: cat, value, sort_order: sortOrder }),
-      })
-    );
+  // 遍历分类
+  document.querySelectorAll('.attr-panel').forEach(panel => {
+    const cat = panel.dataset.cat;
+    const items = panel.querySelectorAll('.attr-item');
+    items.forEach((item, idx) => {
+      const id = item.dataset.id;
+      const value = item.querySelector('[data-field="value"]').value.trim();
+      if (!value) return;
+      if (id) {
+        // 已有项目：更新
+        promises.push(
+          api('/admin/work-attributes/' + id, {
+            method: 'PUT',
+            body: JSON.stringify({ category: cat, value, sort_order: idx }),
+          })
+        );
+      } else {
+        // 新增项目：创建
+        promises.push(
+          api('/admin/work-attributes', {
+            method: 'POST',
+            body: JSON.stringify({ category: cat, value, sort_order: idx }),
+          })
+        );
+      }
+    });
   });
   if (!promises.length) { toast('没有修改', 'error'); return; }
   Promise.all(promises).then(() => {

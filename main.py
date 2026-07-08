@@ -59,7 +59,7 @@ app.add_middleware(GZipMiddleware, minimum_size=1000)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS or (["*"] if ALLOW_DEV_CORS else []),
-    allow_credentials=True,
+    allow_credentials=False,
     allow_methods=["*"],
     allow_headers=["*"],
 )
@@ -167,12 +167,14 @@ async def require_signed_user_token(request: Request, call_next):
             json.dumps({"detail": exc.detail}, ensure_ascii=False),
             status_code=exc.status_code,
             media_type="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
         )
     except ValueError:
         return Response(
             json.dumps({"detail": "Invalid user id"}, ensure_ascii=False),
             status_code=400,
             media_type="application/json",
+            headers={"Access-Control-Allow-Origin": "*"},
         )
 
 

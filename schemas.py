@@ -15,6 +15,8 @@ class RecipeCreate(BaseModel):
     kiln_type: str = ""
     kiln_type_other: str = ""
     body_material: str = ""
+    surface: str = ""
+    transparency: str = ""
     price: int = 0
     turnaround: str = ""
     reward: int = 0
@@ -37,6 +39,8 @@ class RecipeUpdate(BaseModel):
     kiln_type: Optional[str] = None
     kiln_type_other: Optional[str] = None
     body_material: Optional[str] = None
+    surface: Optional[str] = None
+    transparency: Optional[str] = None
     price: Optional[int] = None
     turnaround: Optional[str] = None
     reward: Optional[int] = None
@@ -60,6 +64,8 @@ class RecipeOut(BaseModel):
     kiln_type: Optional[str] = ""
     kiln_type_other: Optional[str] = ""
     body_material: Optional[str] = ""
+    surface: Optional[str] = ""
+    transparency: Optional[str] = ""
     price: Optional[int] = 0
     turnaround: Optional[str] = ""
     reward: Optional[int] = 0
@@ -195,6 +201,7 @@ class RecipeIngredientOut(BaseModel):
     name: str
     name_en: str = ""
     amount: str = ""
+    unit: str = ""
     note: Optional[str] = None
     is_additional: int = 0
     sort_order: int = 0

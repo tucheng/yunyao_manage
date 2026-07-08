@@ -6,7 +6,6 @@ from sqlalchemy import func, inspect, text
 from datetime import datetime
 import json
 from color_names import color_name_in_range, get_color_range_config, get_glaze_colors_data
-from level_check import check_publish_limits
 
 router = APIRouter(prefix="/works", tags=["作品"])
 
@@ -235,13 +234,11 @@ def _work_matches_search_filters(
 @router.get("/search/config")
 def get_work_search_config(db: Session = Depends(get_db)):
     """作品高级搜索配置。"""
-    from models import BodyMaterial, WorkAttributeOption
-    body_materials = [
-        row.name for row in db.query(BodyMaterial).order_by(BodyMaterial.sort_order).all()
-    ]
+    from models import WorkAttributeOption
     # 从 DB 读取作品属性选项
     attr_options = db.query(WorkAttributeOption).order_by(WorkAttributeOption.category, WorkAttributeOption.sort_order).all()
-    kiln_types = [o.value for o in attr_options if o.category == "kiln_type"]
+    body_materials = [o.value for o in attr_options if o.category == 'body_material']
+    kiln_types = [o.value for o in attr_options if o.category == 'kiln_type']
     surfaces = [o.value for o in attr_options if o.category == "surface"]
     transparencies = [o.value for o in attr_options if o.category == "transparency"]
     return {
@@ -589,9 +586,6 @@ def create_work(
     
     if not user_id:
         raise HTTPException(status_code=400, detail="用户未登录")
-
-    # 等级和数量校验（作品）
-    check_publish_limits(db, user_id, is_work=True)
 
     # 处理多图
     images_raw = data.get("images") or []

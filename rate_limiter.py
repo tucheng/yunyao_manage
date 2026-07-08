@@ -12,8 +12,8 @@ class RateLimiter:
     """内存限流器"""
 
     def __init__(self):
-        # {ip: [timestamp, ...]}
-        self._records: dict[str, list[float]] = defaultdict(list)
+        # {(ip, route_group): [timestamp, ...]}
+        self._records: dict[tuple[str, str], list[float]] = defaultdict(list)
 
     def _get_route_group(self, path: str) -> str:
         """根据路径分组，不同组用不同上限"""
@@ -49,18 +49,19 @@ class RateLimiter:
         max_req, window = self._get_limit(group)
 
         now = time.time()
-        records = self._records[client_ip]
+        key = (client_ip, group)
+        records = self._records[key]
 
         # 清除窗口之前的记录
         cutoff = now - window
-        self._records[client_ip] = [t for t in records if t > cutoff]
+        self._records[key] = [t for t in records if t > cutoff]
 
-        if len(self._records[client_ip]) >= max_req:
+        if len(self._records[key]) >= max_req:
             return Response(
                 json.dumps({"detail": f"请求过于频繁，请稍后再试（{max_req}次/{window}秒）"}, ensure_ascii=False),
                 status_code=429,
                 media_type="application/json",
             )
 
-        self._records[client_ip].append(now)
+        self._records[key].append(now)
         return None

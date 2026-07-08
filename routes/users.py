@@ -5,6 +5,7 @@ from database import get_db
 from encryption_utils import encrypt, decrypt, hash_for_lookup
 from models import User, UserLevel, Recipe, Work, Follow, Favorite, FiringCurve, ToBeFired
 from auth_utils import get_current_user
+from models import AppSetting
 import json
 
 PAID_ENABLED_KEY = "paid_enabled"

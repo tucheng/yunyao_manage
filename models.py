@@ -84,6 +84,8 @@ class Recipe(Base):
     forked_from = Column(Integer, nullable=True)  # 二次改造来源配方ID
     source = Column(String(20), default="")  # 来源：glazy, etc.
     source_id = Column(String(50), default="")  # 来源原始ID
+    surface = Column(String(30), default="")  # 釉面质感
+    transparency = Column(String(30), default="")  # 透明度
     glaze_colors = Column(Text, default="[]")  # JSON: [{hex, r, g, b, name}]
 
 
@@ -227,6 +229,7 @@ class RecipeIngredient(Base):
     name = Column(String(200), nullable=False, default="")
     name_en = Column(String(200), default="")
     amount = Column(String(100), default="")
+    unit = Column(String(20), default="")  # g / %
     note = Column(Text)
     is_additional = Column(Integer, default=0)  # 是否附加 0=否 1=是
     sort_order = Column(Integer, default=0)

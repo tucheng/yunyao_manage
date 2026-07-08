@@ -3,7 +3,6 @@
 运行：python init_db.py
 
 初始化预置数据：
-  - 坯体料（BodyMaterial）
   - 作品属性可选值（WorkAttributeOption）
   - 验证码配置默认值（AppSetting）
 """
@@ -12,17 +11,14 @@ import os
 sys.path.insert(0, os.path.dirname(__file__))
 
 from database import SessionLocal, engine, Base
-from models import BodyMaterial, WorkAttributeOption, AppSetting
+from models import WorkAttributeOption, AppSetting
 from sqlalchemy import text
 
 # ===== 预置数据 =====
 
-DEFAULT_BODY_MATERIALS = [
-    "高白泥", "黑陶泥", "紫砂泥", "瓷泥", "陶泥", "粗陶", "红陶", "瓦胎",
-]
-
 DEFAULT_WORK_ATTRIBUTES = {
     "type": ["透明釉", "单色釉", "立体釉", "复合釉", "釉下彩", "釉上彩", "其他"],
+    "body_material": ["高白泥", "黑陶泥", "紫砂泥", "瓷泥", "陶泥", "粗陶", "红陶", "瓦胎"],
     "kiln_type": ["电窑", "气窑", "柴窑", "乐烧"],
     "surface": ["亮光", "丝光", "蜡光", "柔光", "无光", "磨砂"],
     "transparency": ["高透", "微透", "半透", "不透"],
@@ -61,17 +57,6 @@ DEFAULT_COLOR_RANGES = [
     {"value": "yellow", "label": "黄色", "names": ["娇黄", "鸡油黄", "鳝鱼黄"], "description": "黄釉系"},
     {"value": "brown", "label": "棕色", "names": ["赭色", "酱釉", "柿釉"], "description": "棕釉系"},
 ]
-
-
-def init_body_materials(db) -> int:
-    """初始化坯体料，已有则跳过"""
-    count = db.query(BodyMaterial).count()
-    if count > 0:
-        return 0
-    for i, name in enumerate(DEFAULT_BODY_MATERIALS):
-        db.add(BodyMaterial(name=name, sort_order=i))
-    db.commit()
-    return len(DEFAULT_BODY_MATERIALS)
 
 
 def init_work_attributes(db) -> int:
@@ -122,10 +107,6 @@ def main():
     db = SessionLocal()
     try:
         results = []
-        n = init_body_materials(db)
-        if n:
-            results.append(f"坯体料: {n} 条")
-
         n = init_work_attributes(db)
         if n:
             results.append(f"作品属性选项: {n} 条")
