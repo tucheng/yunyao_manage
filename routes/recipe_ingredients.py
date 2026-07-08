@@ -4,13 +4,14 @@ from database import get_db
 from auth_utils import user_id_from_request
 from models import Purchase, RecipeIngredient, Recipe
 from schemas import RecipeIngredientOut
+from security import encrypt, decrypt, hash_for_lookup
 
 router = APIRouter(prefix="/recipe-ingredients", tags=["配方配料"])
 
 
 @router.get("/{recipe_id}", response_model=list[RecipeIngredientOut])
 def get_ingredients(recipe_id: int, request: Request, db: Session = Depends(get_db)):
-    """获取配方的配料列表"""
+    """获取配方的配料列表（解密后返回）"""
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="配方不存在")
@@ -32,12 +33,29 @@ def get_ingredients(recipe_id: int, request: Request, db: Session = Depends(get_
         if not purchase:
             return []
 
-    return (
+    rows = (
         db.query(RecipeIngredient)
         .filter(RecipeIngredient.recipe_id == recipe_id)
         .order_by(RecipeIngredient.sort_order, RecipeIngredient.id)
         .all()
     )
+
+    # 构建返回对象，逐个解密 name 和 amount
+    result = []
+    for row in rows:
+        result.append(RecipeIngredientOut(
+            id=row.id,
+            recipe_id=row.recipe_id,
+            recipe_no=row.recipe_no,
+            name=decrypt(row.name),
+            name_en=row.name_en,
+            amount=decrypt(row.amount),
+            unit=row.unit,
+            note=row.note,
+            is_additional=row.is_additional,
+            sort_order=row.sort_order,
+        ))
+    return result
 
 
 @router.post("/{recipe_id}", response_model=list[RecipeIngredientOut])
@@ -47,7 +65,7 @@ def save_ingredients(
     request: Request,
     db: Session = Depends(get_db),
 ):
-    """批量保存配料（全量替换）"""
+    """批量保存配料（全量替换，加密存储）"""
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="配方不存在")
@@ -60,14 +78,16 @@ def save_ingredients(
     # 删除旧的
     db.query(RecipeIngredient).filter(RecipeIngredient.recipe_id == recipe_id).delete()
 
-    # 插入新的
+    # 插入新的（加密存储）
     for i, item in enumerate(ingredients):
+        raw_name = (item.get("name") or "").strip()
         ing = RecipeIngredient(
             recipe_id=recipe_id,
             recipe_no=recipe.recipe_no or "",
-            name=(item.get("name") or "").strip(),
+            name=encrypt(raw_name),
             name_en=(item.get("name_en") or "").strip(),
-            amount=str(item.get("amount") or "").strip(),
+            name_hash=hash_for_lookup(raw_name),
+            amount=encrypt(str(item.get("amount") or "").strip()),
             unit=str(item.get("unit") or "").strip()[:20],
             note=item.get("note") or "",
             is_additional=1 if item.get("is_additional") else 0,
@@ -76,9 +96,27 @@ def save_ingredients(
         db.add(ing)
 
     db.commit()
-    return (
+
+    rows = (
         db.query(RecipeIngredient)
         .filter(RecipeIngredient.recipe_id == recipe_id)
         .order_by(RecipeIngredient.sort_order, RecipeIngredient.id)
         .all()
     )
+
+    # 解密后返回
+    result = []
+    for row in rows:
+        result.append(RecipeIngredientOut(
+            id=row.id,
+            recipe_id=row.recipe_id,
+            recipe_no=row.recipe_no,
+            name=decrypt(row.name),
+            name_en=row.name_en,
+            amount=decrypt(row.amount),
+            unit=row.unit,
+            note=row.note,
+            is_additional=row.is_additional,
+            sort_order=row.sort_order,
+        ))
+    return result

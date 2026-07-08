@@ -6,7 +6,7 @@ from schemas import (
     RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
     PurchaseCreate, PurchaseOut, ReviewCreate, ReviewOut,
 )
-from security import encrypt, decrypt
+from security import encrypt, decrypt, hash_for_lookup
 from auth_utils import user_id_from_request
 from sqlalchemy import text, func
 import json
@@ -59,30 +59,37 @@ def _public_recipe_query(db: Session):
 
 
 def _recipe_ingredient_names(recipe_id: int, db: Session) -> list[str]:
-    """从 recipe_ingredients 表查原料名称"""
+    """从 recipe_ingredients 表查原料名称（解密后返回）"""
     rows = db.query(RecipeIngredient.name).filter(
         RecipeIngredient.recipe_id == recipe_id
     ).all()
-    return [r[0] for r in rows if r[0]]
+    return [decrypt(r[0]) for r in rows if r[0]]
 
 
 def _recipe_has_material(recipe: Recipe, material: str, db: Session) -> bool:
     material = (material or "").strip()
     if not material:
         return True
-    return material in _recipe_ingredient_names(recipe.id, db)
+    h = hash_for_lookup(material)
+    return db.query(RecipeIngredient.id).filter(
+        RecipeIngredient.recipe_id == recipe.id,
+        RecipeIngredient.name_hash == h,
+    ).first() is not None
 
 
 def _recipe_has_all_materials(recipe: Recipe, materials_str: str, db: Session) -> bool:
-    """AND 逻辑：配方必须包含所有指定的原料"""
+    """AND 逻辑：配方必须包含所有指定的原料（哈希匹配）"""
     if not materials_str:
         return True
-    names = _recipe_ingredient_names(recipe.id, db)
-    for m in materials_str.split(","):
-        m = m.strip()
-        if m and m not in names:
-            return False
-    return True
+    materials = [m.strip() for m in materials_str.split(",") if m.strip()]
+    if not materials:
+        return True
+    hashes = [hash_for_lookup(m) for m in materials]
+    count = db.query(RecipeIngredient.id).filter(
+        RecipeIngredient.recipe_id == recipe.id,
+        RecipeIngredient.name_hash.in_(hashes),
+    ).count()
+    return count == len(hashes)
 
 
 def _recipe_has_work(recipe: Recipe, work_count: int) -> bool:

@@ -227,9 +227,10 @@ class RecipeIngredient(Base):
     id = Column(Integer, primary_key=True, index=True)
     recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, index=True)
     recipe_no = Column(String(10), default="")
-    name = Column(String(200), nullable=False, default="")
+    name = Column(String(200), nullable=False, default="")  # AES 加密存储
     name_en = Column(String(200), default="")
-    amount = Column(String(100), default="")
+    name_hash = Column(String(64), default="", index=True)  # SHA-256，用于搜索匹配
+    amount = Column(String(100), default="")  # AES 加密存储
     unit = Column(String(20), default="")  # g / %
     note = Column(Text)
     is_additional = Column(Integer, default=0)  # 是否附加 0=否 1=是
