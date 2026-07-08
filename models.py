@@ -328,11 +328,44 @@ class CeramicMaterial(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(100), nullable=False, index=True)       # 原材料名
+    name_en = Column(String(100), default="")                      # 英文名
     formula = Column(String(200), default="")                     # 分子式（Unicode下标）
     molecular_weight = Column(String(50), default="")            # 分子量
+    # 氧化物成分（重量百分比 %）
+    sio2 = Column(Float, nullable=True)
+    al2o3 = Column(Float, nullable=True)
+    fe2o3 = Column(Float, nullable=True)
+    tio2 = Column(Float, nullable=True)
+    cao = Column(Float, nullable=True)
+    mgo = Column(Float, nullable=True)
+    na2o = Column(Float, nullable=True)
+    k2o = Column(Float, nullable=True)
+    zno = Column(Float, nullable=True)
+    b2o3 = Column(Float, nullable=True)
+    p2o5 = Column(Float, nullable=True)
+    loi = Column(Float, nullable=True)  # 烧失量
     category = Column(String(50), default="")
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RecipeSeger(Base):
+    """配方 Seger 公式计算结果"""
+    __tablename__ = "recipe_seger"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, unique=True, index=True)
+    seger_unified = Column(String(500), default="")       # 归一化表达式
+    seger_al2o3 = Column(Float, nullable=True)             # Al₂O₃ 摩尔比
+    seger_sio2 = Column(Float, nullable=True)              # SiO₂ 摩尔比
+    seger_ro = Column(Float, nullable=True)                # RO+R₂O 总和
+    acid_base_ratio = Column(Float, nullable=True)         # SiO₂/Al₂O₃（酸碱度）
+    acid_base_note = Column(String(500), default="")       # 酸碱度说明
+    seger_detail = Column(Text, default="")                # JSON: 各氧化物摩尔明细
+    calculated_at = Column(DateTime(timezone=True), nullable=True)
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    recipe = relationship("Recipe", backref="seger")
 
 
 class UserLevel(Base):

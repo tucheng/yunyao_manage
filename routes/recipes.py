@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import Recipe, User, Purchase, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName
+from models import Recipe, User, Purchase, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger
 from schemas import (
     RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
     PurchaseCreate, PurchaseOut, ReviewCreate, ReviewOut,
@@ -9,7 +9,11 @@ from schemas import (
 from security import encrypt, decrypt, hash_for_lookup
 from auth_utils import user_id_from_request
 from sqlalchemy import text, func
+from seger_calculator import calculate_seger
 import json
+import logging
+
+logger = logging.getLogger('yunyao')
 
 router = APIRouter(prefix="/recipes", tags=["釉料配方"])
 
@@ -211,6 +215,12 @@ def count_recipes(
     material: str = "",
     materials: str = "",
     has_work: str = "",
+    surface: str = "",
+    transparency: str = "",
+    color: str = "",
+    temperature: str = "",
+    kiln_type: str = "",
+    has_images: str = "",
     db: Session = Depends(get_db),
 ):
     query = _public_recipe_query(db)
@@ -223,6 +233,24 @@ def count_recipes(
     if keyword:
         query = query.filter(
             Recipe.title.contains(keyword)
+        )
+    if surface:
+        query = query.filter(Recipe.surface == surface)
+    if transparency:
+        query = query.filter(Recipe.transparency == transparency)
+    if color:
+        query = query.filter(Recipe.color == color)
+    if temperature:
+        query = query.filter(Recipe.temperature == temperature)
+    if kiln_type:
+        query = query.filter(Recipe.kiln_type == kiln_type)
+    if has_images == "1":
+        query = query.filter(
+            (Recipe.cover != "") | (Recipe.images.isnot(None)) | (Recipe.images != "[]")
+        )
+    elif has_images == "0":
+        query = query.filter(
+            (Recipe.cover == "") & ((Recipe.images.is_(None)) | (Recipe.images == "[]"))
         )
     rows_query = _recipe_rows_with_work_counts(query)
     if not material and not materials and not has_work:
@@ -243,6 +271,12 @@ def list_recipes(
     material: str = "",
     materials: str = "",
     has_work: str = "",
+    surface: str = "",
+    transparency: str = "",
+    color: str = "",
+    temperature: str = "",
+    kiln_type: str = "",
+    has_images: str = "",  # "1"=有图 "0"=无图
     page: int = 1,
     page_size: int = 20,
     db: Session = Depends(get_db),
@@ -260,6 +294,24 @@ def list_recipes(
         query = query.filter(
             Recipe.title.contains(keyword)
             | Recipe.recipe_no.contains(keyword)
+        )
+    if surface:
+        query = query.filter(Recipe.surface == surface)
+    if transparency:
+        query = query.filter(Recipe.transparency == transparency)
+    if color:
+        query = query.filter(Recipe.color == color)
+    if temperature:
+        query = query.filter(Recipe.temperature == temperature)
+    if kiln_type:
+        query = query.filter(Recipe.kiln_type == kiln_type)
+    if has_images == "1":
+        query = query.filter(
+            (Recipe.cover != "") | (Recipe.images.isnot(None)) | (Recipe.images != "[]")
+        )
+    elif has_images == "0":
+        query = query.filter(
+            (Recipe.cover == "") & ((Recipe.images.is_(None)) | (Recipe.images == "[]"))
         )
 
     rows_query = _recipe_rows_with_work_counts(query).order_by(Recipe.created_at.desc())
@@ -734,6 +786,41 @@ def get_recipe(
     return recipe
 
 
+# ========= Seger 公式查询 =========
+
+@router.get("/{recipe_id}/seger")
+def get_recipe_seger(recipe_id: int, db: Session = Depends(get_db)):
+    """获取配方的 Seger 公式计算结果"""
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="配方不存在")
+
+    seger = db.query(RecipeSeger).filter(RecipeSeger.recipe_id == recipe_id).first()
+    if not seger:
+        return {
+            "recipe_id": recipe_id,
+            "seger_unified": "",
+            "seger_al2o3": None,
+            "seger_sio2": None,
+            "seger_ro": None,
+            "acid_base_ratio": None,
+            "acid_base_note": "",
+            "seger_detail": "{}",
+            "calculated_at": None,
+        }
+    return {
+        "recipe_id": seger.recipe_id,
+        "seger_unified": seger.seger_unified,
+        "seger_al2o3": seger.seger_al2o3,
+        "seger_sio2": seger.seger_sio2,
+        "seger_ro": seger.seger_ro,
+        "acid_base_ratio": seger.acid_base_ratio,
+        "acid_base_note": seger.acid_base_note,
+        "seger_detail": seger.seger_detail,
+        "calculated_at": seger.calculated_at.isoformat() if seger.calculated_at else None,
+    }
+
+
 # ========= 创建/更新/删除 =========
 
 @router.post("/", response_model=RecipeOut)
@@ -796,6 +883,12 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         if work and work.user_id == user_id:
             work.recipe_id = db_recipe.id
             db.commit()
+    # Trigger Seger formula calculation
+    try:
+        calculate_seger(db_recipe.id, db)
+        logger.info("Seger calculation completed for recipe %s", db_recipe.id)
+    except Exception as e:
+        logger.error("Seger calculation failed for recipe %s: %s", db_recipe.id, e)
     return db_recipe
 
 
@@ -839,6 +932,12 @@ def update_recipe(
     db_recipe.updated_at = func.now()
     db.commit()
     db.refresh(db_recipe)
+    # Trigger Seger formula calculation
+    try:
+        calculate_seger(db_recipe.id, db)
+        logger.info("Seger calculation completed for recipe %s", db_recipe.id)
+    except Exception as e:
+        logger.error("Seger calculation failed for recipe %s: %s", db_recipe.id, e)
     return db_recipe
 
 

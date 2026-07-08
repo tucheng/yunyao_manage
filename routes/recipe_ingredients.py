@@ -6,6 +6,10 @@ from auth_utils import user_id_from_request
 from models import Purchase, RecipeIngredient, Recipe, IngredientName
 from schemas import RecipeIngredientOut
 from security import encrypt, decrypt, hash_for_lookup
+from seger_calculator import calculate_seger
+import logging
+
+logger = logging.getLogger('yunyao')
 
 router = APIRouter(prefix="/recipe-ingredients", tags=["配方配料"])
 
@@ -106,6 +110,13 @@ def save_ingredients(
         db.execute(text("INSERT IGNORE INTO ingredient_names (name) VALUES (:name)"), {"name": name})
 
     db.commit()
+
+    # Trigger Seger formula recalculation after ingredients change
+    try:
+        calculate_seger(recipe_id, db)
+        logger.info("Seger recalculation completed for recipe %s after ingredient update", recipe_id)
+    except Exception as e:
+        logger.error("Seger recalculation failed for recipe %s: %s", recipe_id, e)
 
     rows = (
         db.query(RecipeIngredient)
