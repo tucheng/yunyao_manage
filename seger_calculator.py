@@ -10,9 +10,10 @@ import json
 import logging
 from datetime import datetime, timezone
 
+from sqlalchemy import func
 from sqlalchemy.orm import Session
 from encryption_utils import decrypt
-from models import RecipeIngredient, CeramicMaterial, GlazyMaterial, RecipeSeger, Recipe
+from models import RecipeIngredient, Material, RecipeSeger, Recipe
 
 logger = logging.getLogger('yunyao')
 
@@ -31,40 +32,49 @@ OXIDE_MW = {
     'zno': 81.38,
     'b2o3': 69.62,
     'p2o5': 141.94,
+    'li2o': 29.88,
+    'mno2': 86.94,
+    'coo': 74.93,
+    'sno2': 150.71,
+    'cuo': 79.55,
+    'cr2o3': 151.99,
+    'pbo': 223.20,
+    'bao': 153.33,
+    'sro': 103.62,
 }
 
 # ============================================================
 # Molecular weights of common mineral formulas (total g/mol)
 # ============================================================
 MOLECULE_MW = {
-    'K2O·Al2O3·6SiO2': 94.20 + 101.96 + 6 * 60.08,    # Orthoclase feldspar
-    'Na2O·Al2O3·6SiO2': 61.98 + 101.96 + 6 * 60.08,    # Albite feldspar
-    'CaO·Al2O3·2SiO2': 56.08 + 101.96 + 2 * 60.08,     # Anorthite feldspar
-    'CaO·Al2O3·4SiO2': 56.08 + 101.96 + 4 * 60.08,     # 钙长石 low-Si variant
-    'K2O·Al2O3·4SiO2': 94.20 + 101.96 + 4 * 60.08,     # 钾长石 low-Si variant
-    '2CaO·MgO·4SiO2': 2 * 56.08 + 40.30 + 4 * 60.08,   # Diopside
-    '3Al2O3·2SiO2': 3 * 101.96 + 2 * 60.08,             # Mullite
-    'Al2O3·2SiO2·2H2O': 101.96 + 2 * 60.08 + 2 * 18.015,  # Kaolinite (approx)
-    'MgO·SiO2': 40.30 + 60.08,                           # Enstatite
-    'CaO·SiO2': 56.08 + 60.08,                           # Wollastonite
-    'CaCO3': 56.08 + 44.01,                              # Calcium carbonate (CaO + CO2)
-    'MgCO3': 40.30 + 44.01,                               # Magnesium carbonate
-    'BaO·Al2O3·4SiO2': 153.33 + 101.96 + 4 * 60.08,    # Celsian
-    'SrO·Al2O3·4SiO2': 103.62 + 101.96 + 4 * 60.08,    # 锶长石
-    'Li2O·Al2O3·4SiO2': 29.88 + 101.96 + 4 * 60.08,    # Petalite
-    'Li2O·Al2O3·8SiO2': 29.88 + 101.96 + 8 * 60.08,    # Spodumene
+    'K2O·Al2O3·6SiO2': 94.20 + 101.96 + 6 * 60.08,
+    'Na2O·Al2O3·6SiO2': 61.98 + 101.96 + 6 * 60.08,
+    'CaO·Al2O3·2SiO2': 56.08 + 101.96 + 2 * 60.08,
+    'CaO·Al2O3·4SiO2': 56.08 + 101.96 + 4 * 60.08,
+    'K2O·Al2O3·4SiO2': 94.20 + 101.96 + 4 * 60.08,
+    '2CaO·MgO·4SiO2': 2 * 56.08 + 40.30 + 4 * 60.08,
+    '3Al2O3·2SiO2': 3 * 101.96 + 2 * 60.08,
+    'Al2O3·2SiO2·2H2O': 101.96 + 2 * 60.08 + 2 * 18.015,
+    'MgO·SiO2': 40.30 + 60.08,
+    'CaO·SiO2': 56.08 + 60.08,
+    'CaCO3': 56.08 + 44.01,
+    'MgCO3': 40.30 + 44.01,
+    'BaO·Al2O3·4SiO2': 153.33 + 101.96 + 4 * 60.08,
+    'SrO·Al2O3·4SiO2': 103.62 + 101.96 + 4 * 60.08,
+    'Li2O·Al2O3·4SiO2': 29.88 + 101.96 + 4 * 60.08,
+    'Li2O·Al2O3·8SiO2': 29.88 + 101.96 + 8 * 60.08,
 }
 
 # ============================================================
 # Column names in material models that hold oxide percentages
 # ============================================================
 OXIDE_COLUMNS = ['sio2', 'al2o3', 'fe2o3', 'tio2', 'cao', 'mgo',
-                 'na2o', 'k2o', 'zno', 'b2o3', 'p2o5']
+                 'na2o', 'k2o', 'zno', 'b2o3', 'p2o5',
+                 'li2o', 'mno2', 'coo', 'sno2', 'cuo', 'cr2o3', 'pbo', 'bao', 'sro']
 
 # Oxides classified as RO + R2O (flux / alkaline group)
-# In traditional Seger: RO = CaO, MgO, ZnO, FeO, etc.; R2O = Na2O, K2O
-# We use Fe2O3 as proxy since FeO data is rarely available separately
-FLUX_OXIDES = ['na2o', 'k2o', 'cao', 'mgo', 'zno', 'fe2o3']
+FLUX_OXIDES = ['na2o', 'k2o', 'cao', 'mgo', 'zno', 'fe2o3',
+               'li2o', 'coo', 'cuo', 'pbo', 'bao', 'sro']
 
 # ============================================================
 # Helper
@@ -91,6 +101,198 @@ def _get_acid_base_note(ratio: float) -> str:
     return "酸性过强，釉面极易开裂，热膨胀系数偏高"
 
 
+# ============================================================
+# New Analysis Functions
+# ============================================================
+
+
+def _estimate_firing_temp(oxide_moles: dict) -> dict:
+    """Estimate firing temperature range based on flux oxide content.
+
+    The total flux (RO+R2O) moles per 'unit batch' tells us how
+    much melting aid is present. More flux → lower melting point.
+    """
+    total_flux = sum(oxide_moles.get(col, 0) for col in FLUX_OXIDES)
+    if total_flux <= 0:
+        return {"cone": "", "temp_range": "", "note": ""}
+
+    # Rough heuristic based on total flux moles (accumulated from ~100g batch)
+    if total_flux > 0.5:
+        cone = "06-04"
+        temp = "约 980–1060℃"
+        note = "熔剂含量高，低温即可熔化"
+    elif total_flux > 0.3:
+        cone = "04-02"
+        temp = "约 1060–1120℃"
+        note = "熔剂含量偏高，适合中温"
+    elif total_flux > 0.2:
+        cone = "02-4"
+        temp = "约 1120–1200℃"
+        note = "熔剂含量适中，适合中高温"
+    elif total_flux > 0.12:
+        cone = "4-8"
+        temp = "约 1200–1260℃"
+        note = "熔剂量中等，适合高温"
+    else:
+        cone = "8-10"
+        temp = "约 1260–1300℃+"
+        note = "熔剂含量较低，需要较高温度烧成"
+
+    return {"cone": cone, "temp_range": temp, "note": note}
+
+
+def _get_surface_prediction(ratio: float) -> dict:
+    """Predict glaze surface and potential issues based on SiO₂:Al₂O₃ ratio."""
+    if ratio <= 0:
+        return {"surface": "", "note": ""}
+
+    if ratio < 4:
+        return {"surface": "强哑光", "note": "Al₂O₃ 比例极高，严重哑光，可能出现缩釉、针孔"}
+    if ratio < 6:
+        return {"surface": "哑光", "note": "Al₂O₃ 偏高，釉面哑光质感，留意缩釉风险"}
+    if ratio < 8:
+        return {"surface": "半哑光", "note": "半哑光至半光面，质感柔和"}
+    if ratio < 10:
+        return {"surface": "缎面", "note": "缎面质感，光泽适中，品质较好"}
+    if ratio < 12:
+        return {"surface": "半光", "note": "半光泽釉面，光泽感强"}
+    if ratio < 16:
+        return {"surface": "亮光", "note": "釉面光亮，过高易开片"}
+    return {"surface": "强亮光", "note": "釉面极亮，热膨胀偏高，极易开裂"}
+
+
+def _get_thermal_expansion_analysis(oxide_moles: dict, normalized: dict) -> dict:
+    """Analyze thermal expansion characteristics.
+
+    - Na₂O expands more than K₂O → high Na₂O/K₂O ratio means crazing risk.
+    - CaO helps reduce expansion.
+    - High SiO₂ also increases expansion.
+    """
+    na2o = oxide_moles.get('na2o', 0)
+    k2o = oxide_moles.get('k2o', 0)
+    cao = oxide_moles.get('cao', 0)
+    mgo = oxide_moles.get('mgo', 0)
+
+    # K-Na balance
+    total_alkali = na2o + k2o
+    if total_alkali > 0:
+        na_k_ratio = na2o / total_alkali
+    else:
+        na_k_ratio = 0
+
+    issues = []
+    if na_k_ratio > 0.6 and total_alkali > 0.01:
+        issues.append("Na₂O 占比偏高 → 热膨胀偏大，轴面易开裂（开片）")
+    elif na_k_ratio < 0.3 and total_alkali > 0.01:
+        issues.append("K₂O 占比偏高 → 热膨胀偏小，釉面可能压缩（缩釉）")
+
+    if cao > 0.01:
+        issues.append(f"CaO 含量适中 → 有助于降低膨胀、改善坯釉结合")
+
+    if mgo > 0.01:
+        issues.append("MgO 存在 → 提升釉面硬度，改善哑光效果")
+
+    if not issues:
+        issues.append("碱金属/碱土金属组成较均衡，热膨胀风险较低")
+
+    return {"na_k_ratio": round(na_k_ratio, 4), "details": issues}
+
+
+def _get_color_analysis(oxide_moles: dict) -> dict:
+    """Analyze coloring oxide presence and suggest possible glaze colors."""
+    fe2o3 = oxide_moles.get('fe2o3', 0)
+    tio2 = oxide_moles.get('tio2', 0)
+    zno = oxide_moles.get('zno', 0)
+    b2o3 = oxide_moles.get('b2o3', 0)
+    p2o5 = oxide_moles.get('p2o5', 0)
+    cao = oxide_moles.get('cao', 0)
+    mgo = oxide_moles.get('mgo', 0)
+    coo = oxide_moles.get('coo', 0)
+    cuo = oxide_moles.get('cuo', 0)
+    cr2o3 = oxide_moles.get('cr2o3', 0)
+    mno2 = oxide_moles.get('mno2', 0)
+    li2o = oxide_moles.get('li2o', 0)
+
+    hints = []
+
+    # Iron + Titanium → celadon / tenmoku
+    if fe2o3 > 0.001:
+        if tio2 > 0 and fe2o3 / tio2 > 3:
+            hints.append(f"Fe₂O₃({fe2o3:.4f}mol)+TiO₂ → 还原气氛可能产生青瓷/天目效果")
+        elif fe2o3 > 0.01:
+            hints.append(f"Fe₂O₃({fe2o3:.4f}mol)含量显著 → 影响釉色发色")
+
+    # CoO → 蓝色系
+    if coo > 0.001:
+        hints.append(f"CoO({coo:.4f}mol)存在 → 产生蓝色调，用量极微即可显色")
+
+    # CuO → 绿色/铜红
+    if cuo > 0.001:
+        hints.append(f"CuO({cuo:.4f}mol)存在 → 氧化焰呈绿色，还原焰可能出铜红")
+
+    # Cr2O3 → 绿色/粉红
+    if cr2o3 > 0.001:
+        hints.append(f"Cr₂O₃({cr2o3:.4f}mol)存在 → 氧化焰呈绿色，与锡合用出粉红")
+
+    # MnO2 → 紫褐/铁锈
+    if mno2 > 0.005:
+        hints.append(f"MnO₂({mno2:.4f}mol)含量较高 → 产生紫褐/铁锈色调")
+
+    # P2O5 + CaO → 骨灰系
+    if p2o5 > 0.001 and cao > 0.01:
+        hints.append("P₂O₅+CaO → 骨灰系效果，可能产生哑光乳浊")
+
+    # ZnO
+    if zno > 0.001:
+        hints.append("ZnO 存在 → 影响结晶釉效果，改善乳浊度")
+
+    # B2O3
+    if b2o3 > 0.001:
+        hints.append("B₂O₃ 存在 → 降低熔点，改善釉面流动性和光泽")
+
+    # Li2O
+    if li2o > 0.001:
+        hints.append("Li₂O 存在 → 强熔剂，改善釉面流动性和光泽")
+
+    if not hints:
+        hints.append("无色系釉料基础成分，颜色取决于添加的色料")
+
+    return {"hints": hints}
+
+
+def _get_oxide_contributions(ingredient_details: list) -> dict:
+    """For each oxide, list which ingredients contributed and what percentage."""
+    # Collect per-oxide contributions
+    oxide_sources = {}
+    for ing in ingredient_details:
+        name = ing['ingredient']
+        for k, v in ing.items():
+            if k in OXIDE_COLUMNS and v and v > 0:
+                if k not in oxide_sources:
+                    oxide_sources[k] = []
+                oxide_sources[k].append({"ingredient": name, "moles": round(v, 6)})
+
+    # Calculate percentage share per oxide
+    result = {}
+    for oxide, sources in oxide_sources.items():
+        total = sum(s['moles'] for s in sources)
+        if total > 0:
+            label = oxide.upper()  # e.g. 'sio2' → 'SiO₂'
+            result[oxide] = [
+                {
+                    "ingredient": s['ingredient'],
+                    "pct": round(s['moles'] / total * 100, 1),
+                }
+                for s in sorted(sources, key=lambda x: -x['moles'])
+            ]
+    return result
+
+
+# ============================================================
+# Formatting
+# ============================================================
+
+
 def _format_seger_unified(
     ro_r2o: float,
     al2o3: float,
@@ -98,13 +300,15 @@ def _format_seger_unified(
     oxide_moles: dict,
     norm_factor: float,
 ) -> str:
-    """Format the unified Seger formula string, e.g. '0.3K2O + 0.7CaO : 0.5Al2O3 : 4.0SiO2'."""
+    """Format the unified Seger formula string."""
     if ro_r2o <= 0 or norm_factor <= 0:
         return ""
 
     ordered_labels = [
         ('na2o', 'Na₂O'), ('k2o', 'K₂O'), ('cao', 'CaO'),
         ('mgo', 'MgO'), ('zno', 'ZnO'), ('fe2o3', 'Fe₂O₃'),
+        ('li2o', 'Li₂O'), ('coo', 'CoO'), ('cuo', 'CuO'),
+        ('pbo', 'PbO'), ('bao', 'BaO'), ('sro', 'SrO'),
     ]
 
     ro_parts = []
@@ -132,6 +336,11 @@ def _empty_seger_result(reason: str = ""):
         'seger_ro': None,
         'acid_base_ratio': None,
         'acid_base_note': reason,
+        'surface_prediction': {"surface": "", "note": ""},
+        'firing_temp': {"cone": "", "temp_range": "", "note": ""},
+        'thermal_expansion': {"na_k_ratio": 0, "details": []},
+        'color_analysis': {"hints": []},
+        'oxide_contributions': {},
         'seger_detail': json.dumps({}, ensure_ascii=False),
         'calculated_at': datetime.now(timezone.utc),
     }
@@ -201,30 +410,10 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
     6. Group into **RO+R₂O** (flux), **Al₂O₃**, and **SiO₂**.
     7. Normalise so that RO+R₂O = 1.0.
     8. Format the unified Seger string and compute the acid/base ratio.
-    9. Persist to **recipe_seger** table.
-    10. Return a full result dict.
-
-    Edge Cases
-    ----------
-    - No ingredients / empty names → empty result with explanatory note.
-    - Missing material lookup → ingredient is skipped (logged).
-    - All oxide moles zero → empty result with explanatory note.
-    - Division by zero (no flux) → zeros in normalised values.
-
-    Parameters
-    ----------
-    recipe_id : int
-        Recipe primary key.
-    db : sqlalchemy.orm.Session
-        Active database session.
-
-    Returns
-    -------
-    dict
-        Seger calculation result with keys:
-        ``seger_unified``, ``seger_al2o3``, ``seger_sio2``, ``seger_ro``,
-        ``acid_base_ratio``, ``acid_base_note``, ``seger_detail`` (JSON),
-        ``calculated_at``.
+    9. Compute additional analyses: surface prediction, firing temp estimate,
+       thermal expansion analysis, color analysis, oxide contributions.
+    10. Persist to **recipe_seger** table.
+    11. Return a full result dict.
     """
     # ----- 1. Fetch recipe & ingredients -----------------------------------
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
@@ -254,8 +443,10 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
             continue
 
         raw_amount = decrypt(ing.amount) if ing.amount else "0"
+        # 金额可能含单位后缀如 "45.3%"，去掉非数字字符
+        clean_amount = raw_amount.replace('%', '').replace('g', '').replace('G', '').strip()
         try:
-            amount_val = float(raw_amount)
+            amount_val = float(clean_amount)
         except (ValueError, TypeError):
             amount_val = 0.0
 
@@ -273,7 +464,6 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
         )
 
     # ----- 3. Determine scaling factor -------------------------------------
-    # If any ingredient is in %, treat the total as 100 g
     has_percentage = any(d['unit'] == '%' for d in ingredient_data)
     total_raw = sum(d['amount'] for d in ingredient_data)
 
@@ -286,6 +476,8 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
     oxide_moles_total = {col: 0.0 for col in OXIDE_COLUMNS}
     ingredient_details = []
     unmatched_names = []
+    skipped_additional = []
+    found_no_oxides = []
 
     for d in ingredient_data:
         name = d['name']
@@ -293,51 +485,41 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
         scaled_amount = d['amount'] * scale
 
         if d['is_additional']:
-            continue  # skip additional / extra ingredients
+            skipped_additional.append(name)
+            # 仍参与 Seger 计算，附加材料也可能含氧化物
 
         # --- Look up material ---
         material = None
         matched_by = ""
 
-        # a) name_en → ceramic_materials
-        if name_en:
-            material = (
-                db.query(CeramicMaterial)
-                .filter(CeramicMaterial.name_en == name_en)
-                .first()
+        # a) decrypted name → materials.name (去空格匹配，数据优先)
+        name_clean = name.replace(' ', '')
+        material = (
+            db.query(Material)
+            .filter(func.replace(Material.name, ' ', '') == name_clean)
+            .order_by(
+                func.coalesce(Material.sio2, 0).desc(),
+                Material.source.desc(),
             )
-            if material:
-                matched_by = f"ceramic_materials.name_en='{name_en}'"
+            .first()
+        )
+        if material:
+            matched_by = f"materials.name='{name}'"
 
-        # b) decrypted name → ceramic_materials.name
-        if not material:
+        # b) name_en → materials.name_en (去空格匹配，数据优先)
+        if not material and name_en:
+            name_en_clean = name_en.replace(' ', '')
             material = (
-                db.query(CeramicMaterial)
-                .filter(CeramicMaterial.name == name)
+                db.query(Material)
+                .filter(func.replace(Material.name_en, ' ', '') == name_en_clean)
+                .order_by(
+                    func.coalesce(Material.sio2, 0).desc(),
+                    Material.source.desc(),
+                )
                 .first()
             )
             if material:
-                matched_by = f"ceramic_materials.name='{name}'"
-
-        # c) decrypted name → glazy_materials.name
-        if not material:
-            material = (
-                db.query(GlazyMaterial)
-                .filter(GlazyMaterial.name == name)
-                .first()
-            )
-            if material:
-                matched_by = f"glazy_materials.name='{name}'"
-
-        # d) decrypted name → glazy_materials.name_cn
-        if not material:
-            material = (
-                db.query(GlazyMaterial)
-                .filter(GlazyMaterial.name_cn == name)
-                .first()
-            )
-            if material:
-                matched_by = f"glazy_materials.name_cn='{name}'"
+                matched_by = f"materials.name_en='{name_en}'"
 
         if not material:
             unmatched_names.append(name)
@@ -360,11 +542,16 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
             if not mw or mw == 0:
                 continue
 
-            # weight of this oxide = ingredient weight × oxide% / 100
             oxide_weight = scaled_amount * oxide_pct / 100.0
             moles = oxide_weight / mw
             oxide_moles_total[oxide_col] += moles
             detail[oxide_col] = round(moles, 6)
+
+        # Track materials found but with no oxide data
+        # detail starts with 4 base keys (ingredient, amount, unit, matched_by)
+        # if no oxide columns were added, it means this material has no oxide data
+        if len(detail) <= 4:
+            found_no_oxides.append(name)
 
         ingredient_details.append(detail)
 
@@ -399,7 +586,16 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
     acid_base_ratio = round(seger_sio2 / seger_al2o3, 4) if seger_al2o3 > 0 else 0.0
     acid_base_note = _get_acid_base_note(acid_base_ratio)
 
-    # ----- 8. Build detail JSON --------------------------------------------
+    # ----- 8. Additional analyses ------------------------------------------
+    surface_prediction = _get_surface_prediction(acid_base_ratio)
+    firing_temp = _estimate_firing_temp(oxide_moles_total)
+    thermal_expansion = _get_thermal_expansion_analysis(oxide_moles_total, {
+        'ro_r2o': seger_ro, 'al2o3': seger_al2o3, 'sio2': seger_sio2,
+    })
+    color_analysis = _get_color_analysis(oxide_moles_total)
+    oxide_contributions = _get_oxide_contributions(ingredient_details)
+
+    # ----- 9. Build detail JSON --------------------------------------------
     seger_detail = {
         'oxide_moles': {
             k: round(v, 6) for k, v in oxide_moles_total.items() if v != 0
@@ -412,8 +608,16 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
         'norm_factor': round(norm_factor, 6),
         'ingredient_details': ingredient_details,
         'unmatched': unmatched_names,
+        'skipped_additional': skipped_additional,
+        'found_no_oxides': found_no_oxides,
         'total_grams': round(total_raw, 2),
         'scale': round(scale, 6),
+        # 扩展分析
+        'surface_prediction': surface_prediction,
+        'firing_temp': firing_temp,
+        'thermal_expansion': thermal_expansion,
+        'color_analysis': color_analysis,
+        'oxide_contributions': oxide_contributions,
     }
 
     result = {
@@ -424,10 +628,15 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
         'seger_ro': round(seger_ro, 4),
         'acid_base_ratio': acid_base_ratio,
         'acid_base_note': acid_base_note,
+        'surface_prediction': surface_prediction,
+        'firing_temp': firing_temp,
+        'thermal_expansion': thermal_expansion,
+        'color_analysis': color_analysis,
+        'oxide_contributions': oxide_contributions,
         'seger_detail': json.dumps(seger_detail, ensure_ascii=False),
         'calculated_at': datetime.now(timezone.utc),
     }
 
-    # ----- 9. Persist & return ---------------------------------------------
+    # ----- 10. Persist & return --------------------------------------------
     _save_seger(db, recipe_id, result)
     return result

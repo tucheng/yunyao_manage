@@ -1,11 +1,11 @@
-"""陶瓷原材料清单 - 路由"""
+"""本土原材料 - 路由（从 materials 表查询 source='local'）"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from database import get_db
-from models import CeramicMaterial
+from models import Material
 
-router = APIRouter(prefix="/ceramic-materials", tags=["陶瓷原材料清单"])
+router = APIRouter(prefix="/ceramic-materials", tags=["本土原材料清单"])
 
 
 @router.get("")
@@ -14,18 +14,18 @@ def list_materials(
     page_size: int = Query(200, ge=1, le=500),
     db: Session = Depends(get_db),
 ):
-    """获取原材料列表，支持搜索"""
-    query = db.query(CeramicMaterial)
+    """获取本土原材料列表，支持搜索"""
+    query = db.query(Material).filter(Material.source == "local")
     if q:
         keyword = f"%{q}%"
         query = query.filter(
             or_(
-                CeramicMaterial.name.ilike(keyword),
-                CeramicMaterial.formula.ilike(keyword),
+                Material.name.ilike(keyword),
+                Material.formula.ilike(keyword),
             )
         )
     total = query.count()
-    items = query.order_by(CeramicMaterial.sort_order, CeramicMaterial.id).limit(page_size).all()
+    items = query.order_by(Material.sort_order, Material.id).limit(page_size).all()
     return {
         "items": [
             {
@@ -43,7 +43,7 @@ def list_materials(
 
 @router.get("/{item_id}")
 def get_material(item_id: int, db: Session = Depends(get_db)):
-    item = db.query(CeramicMaterial).filter(CeramicMaterial.id == item_id).first()
+    item = db.query(Material).filter(Material.id == item_id, Material.source == "local").first()
     if not item:
         raise HTTPException(status_code=404, detail="材料不存在")
     return {

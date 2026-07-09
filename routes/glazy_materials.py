@@ -1,9 +1,9 @@
-"""Glazy 海外材料 - 公开查询路由"""
+"""海外材料（Glazy） - 路由（从 materials 表查询 source='glazy'）"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from database import get_db
-from models import GlazyMaterial
+from models import Material
 
 router = APIRouter(prefix="/glazy-materials", tags=["附属-海外材料"])
 
@@ -15,24 +15,24 @@ def list_glazy_materials(
     page_size: int = Query(50, ge=1, le=5000),
     db: Session = Depends(get_db),
 ):
-    """获取 Glazy 海外材料列表，支持搜索"""
-    query = db.query(GlazyMaterial)
+    """获取海外材料列表，支持搜索"""
+    query = db.query(Material).filter(Material.source == "glazy")
     if q:
         keyword = f"%{q}%"
         query = query.filter(
             or_(
-                GlazyMaterial.name.ilike(keyword),
-                GlazyMaterial.name_cn.ilike(keyword),
+                Material.name.ilike(keyword),
+                Material.name_en.ilike(keyword),
             )
         )
     total = query.count()
-    items = query.order_by(GlazyMaterial.name).offset((page - 1) * page_size).limit(page_size).all()
+    items = query.order_by(Material.name).offset((page - 1) * page_size).limit(page_size).all()
     return {
         "items": [
             {
-                "glazy_id": m.glazy_id,
-                "name": m.name,
-                "name_cn": m.name_cn or "",
+                "glazy_id": m.source_id,
+                "name": m.name_en,
+                "name_cn": m.name or "",
                 "is_primitive": bool(m.is_primitive),
                 "sio2": m.sio2,
                 "al2o3": m.al2o3,
@@ -59,13 +59,16 @@ def list_glazy_materials(
 @router.get("/{glazy_id}")
 def get_glazy_material(glazy_id: int, db: Session = Depends(get_db)):
     """获取单个材料详情"""
-    m = db.query(GlazyMaterial).filter(GlazyMaterial.glazy_id == glazy_id).first()
+    m = db.query(Material).filter(
+        Material.source == "glazy",
+        Material.source_id == glazy_id,
+    ).first()
     if not m:
         raise HTTPException(status_code=404, detail="材料不存在")
     return {
-        "glazy_id": m.glazy_id,
-        "name": m.name,
-        "name_cn": m.name_cn or "",
+        "glazy_id": m.source_id,
+        "name": m.name_en,
+        "name_cn": m.name or "",
         "is_primitive": bool(m.is_primitive),
         "sio2": m.sio2,
         "al2o3": m.al2o3,

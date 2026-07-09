@@ -322,6 +322,47 @@ class TemperatureCone(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class Material(Base):
+    """合并后的原材料统一表（本土+海外）"""
+    __tablename__ = "materials"
+
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(200), nullable=False, index=True)        # 中文名
+    name_en = Column(String(200), default="")                      # 英文名
+    source = Column(String(20), default="")                        # 'local' 或 'glazy'
+    source_id = Column(Integer, nullable=True)                     # glazy_id（来源glazy时）
+    formula = Column(String(200), default="")                      # 分子式
+    molecular_weight = Column(String(50), default="")              # 分子量
+    is_analysis = Column(Integer, default=0)
+    is_primitive = Column(Integer, default=0)
+    # 氧化物成分（重量百分比 %）
+    sio2 = Column(Float, nullable=True)
+    al2o3 = Column(Float, nullable=True)
+    fe2o3 = Column(Float, nullable=True)
+    tio2 = Column(Float, nullable=True)
+    cao = Column(Float, nullable=True)
+    mgo = Column(Float, nullable=True)
+    na2o = Column(Float, nullable=True)
+    k2o = Column(Float, nullable=True)
+    zno = Column(Float, nullable=True)
+    b2o3 = Column(Float, nullable=True)
+    p2o5 = Column(Float, nullable=True)
+    li2o = Column(Float, nullable=True)
+    mno2 = Column(Float, nullable=True)
+    coo = Column(Float, nullable=True)
+    sno2 = Column(Float, nullable=True)
+    cuo = Column(Float, nullable=True)
+    cr2o3 = Column(Float, nullable=True)
+    pbo = Column(Float, nullable=True)
+    bao = Column(Float, nullable=True)
+    sro = Column(Float, nullable=True)
+    loi = Column(Float, nullable=True)
+    thermal_expansion = Column(Float, nullable=True)
+    category = Column(String(50), default="")
+    sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class CeramicMaterial(Base):
     """陶瓷原材料清单（附录1）"""
     __tablename__ = "ceramic_materials"
