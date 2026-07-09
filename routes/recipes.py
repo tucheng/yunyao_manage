@@ -263,6 +263,7 @@ def count_recipes(
 
 
 @router.get("/", response_model=list[RecipeListItem])
+@router.get("", response_model=list[RecipeListItem], include_in_schema=False)
 def list_recipes(
     type: str = "",
     category: str = "",
@@ -786,7 +787,38 @@ def get_recipe(
     return recipe
 
 
-# ========= Seger 公式查询 =========
+# ========= Seger 辅助函数 =========
+
+
+def _parse_seger_detail(detail_json: str) -> dict:
+    """Parse seger_detail JSON and extract summary fields."""
+    if not detail_json or detail_json == "{}":
+        return {"unmatched": [], "skipped_additional": [], "found_no_oxides": [],
+                "surface_prediction": {"surface": "", "note": ""},
+                "firing_temp": {"cone": "", "temp_range": "", "note": ""},
+                "thermal_expansion": {"na_k_ratio": 0, "details": []},
+                "color_analysis": {"hints": []},
+                "oxide_contributions": {}}
+    try:
+        detail = json.loads(detail_json)
+        return {
+            "unmatched": detail.get("unmatched", []),
+            "skipped_additional": detail.get("skipped_additional", []),
+            "found_no_oxides": detail.get("found_no_oxides", []),
+            "surface_prediction": detail.get("surface_prediction", {"surface": "", "note": ""}),
+            "firing_temp": detail.get("firing_temp", {"cone": "", "temp_range": "", "note": ""}),
+            "thermal_expansion": detail.get("thermal_expansion", {"na_k_ratio": 0, "details": []}),
+            "color_analysis": detail.get("color_analysis", {"hints": []}),
+            "oxide_contributions": detail.get("oxide_contributions", {}),
+        }
+    except (json.JSONDecodeError, TypeError):
+        return {"unmatched": [], "skipped_additional": [], "found_no_oxides": [],
+                "surface_prediction": {"surface": "", "note": ""},
+                "firing_temp": {"cone": "", "temp_range": "", "note": ""},
+                "thermal_expansion": {"na_k_ratio": 0, "details": []},
+                "color_analysis": {"hints": []},
+                "oxide_contributions": {}}
+
 
 @router.get("/{recipe_id}/seger")
 def get_recipe_seger(recipe_id: int, db: Session = Depends(get_db)):
@@ -797,6 +829,7 @@ def get_recipe_seger(recipe_id: int, db: Session = Depends(get_db)):
 
     seger = db.query(RecipeSeger).filter(RecipeSeger.recipe_id == recipe_id).first()
     if not seger:
+        detail_info = {"unmatched": [], "skipped_additional": [], "found_no_oxides": []}
         return {
             "recipe_id": recipe_id,
             "seger_unified": "",
@@ -807,7 +840,9 @@ def get_recipe_seger(recipe_id: int, db: Session = Depends(get_db)):
             "acid_base_note": "",
             "seger_detail": "{}",
             "calculated_at": None,
+            **detail_info,
         }
+    detail_info = _parse_seger_detail(seger.seger_detail)
     return {
         "recipe_id": seger.recipe_id,
         "seger_unified": seger.seger_unified,
@@ -818,6 +853,7 @@ def get_recipe_seger(recipe_id: int, db: Session = Depends(get_db)):
         "acid_base_note": seger.acid_base_note,
         "seger_detail": seger.seger_detail,
         "calculated_at": seger.calculated_at.isoformat() if seger.calculated_at else None,
+        **detail_info,
     }
 
 
