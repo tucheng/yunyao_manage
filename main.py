@@ -30,6 +30,7 @@ from routes import (
     pay,
     recipe_ingredients,
     recipes,
+    redeem,
     settings as settings_route,
     social,
     temperature_cones,
@@ -118,9 +119,14 @@ def _requires_auth(path: str, method: str) -> bool:
         return False
     if path.startswith(("/admin", "/admin-panel", "/docs", "/openapi.json", "/uploads")):
         return False
+    if path in ("/users/publish-status",):
+        return False
     if path.startswith(("/wallet", "/materials", "/settings", "/users", "/social", "/notifications", "/complaints", "/upload")):
         # materials: GET 列表公开（POST/PUT/DELETE 需登录）
         if path.startswith("/materials/body") and method == "GET":
+            return False
+        # substitutions 查询公开
+        if path.endswith("/substitutions") and method == "GET":
             return False
         return True
     if path.startswith("/recipes"):
@@ -180,6 +186,7 @@ async def require_signed_user_token(request: Request, call_next):
 
 app.include_router(recipe_ingredients.router)
 app.include_router(recipes.router)
+app.include_router(redeem.router)
 app.include_router(auth.router)
 app.include_router(pay.router)
 app.include_router(wallet.router)

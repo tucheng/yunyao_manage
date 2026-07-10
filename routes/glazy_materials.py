@@ -1,11 +1,11 @@
-"""海外材料（Glazy） - 路由（从 materials 表查询 source='glazy'）"""
+"""材料列表路由（从 materials 表查询，source='local' 优先）"""
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from sqlalchemy import or_
+from sqlalchemy import or_, case
 from database import get_db
 from models import Material
 
-router = APIRouter(prefix="/glazy-materials", tags=["附属-海外材料"])
+router = APIRouter(prefix="/glazy-materials", tags=["附属-原材料"])
 
 
 @router.get("")
@@ -15,8 +15,8 @@ def list_glazy_materials(
     page_size: int = Query(50, ge=1, le=5000),
     db: Session = Depends(get_db),
 ):
-    """获取海外材料列表，支持搜索"""
-    query = db.query(Material).filter(Material.source == "glazy")
+    """获取材料列表，local 优先显示"""
+    query = db.query(Material)
     if q:
         keyword = f"%{q}%"
         query = query.filter(
@@ -26,13 +26,19 @@ def list_glazy_materials(
             )
         )
     total = query.count()
-    items = query.order_by(Material.name).offset((page - 1) * page_size).limit(page_size).all()
+    # source='local' 优先，再按名称排序
+    sort_order = case(
+        (Material.source == "local", 0),
+        else_=1
+    )
+    items = query.order_by(sort_order, Material.name).offset((page - 1) * page_size).limit(page_size).all()
     return {
         "items": [
             {
-                "glazy_id": m.source_id,
-                "name": m.name_en,
+                "glazy_id": m.source_id if m.source == "glazy" else m.id,
+                "name": m.name_en or m.name,
                 "name_cn": m.name or "",
+                "source": m.source,
                 "is_primitive": bool(m.is_primitive),
                 "sio2": m.sio2,
                 "al2o3": m.al2o3,

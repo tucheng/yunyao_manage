@@ -181,6 +181,35 @@ print('  Samples:')
 for s in cur.fetchall():
     vals={k:v for k,v in s.items() if v is not None and k not in ('id','name')}
     print(f'    id={s["id"]:3d} {s["name"]:10s} -> {vals}')
+
+# Step 4: CREATE TABLE material_substitutions
+print()
+print("=== Step 4: CREATE TABLE material_substitutions ===")
+try:
+    cur.execute('''CREATE TABLE IF NOT EXISTS material_substitutions (
+        id INT AUTO_INCREMENT PRIMARY KEY,
+        source_material_id INT NOT NULL,
+        target_material_id INT NOT NULL,
+        similarity_score FLOAT DEFAULT 0.0,
+        status VARCHAR(20) DEFAULT 'pending',
+        note VARCHAR(500) DEFAULT '',
+        created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+        updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+        INDEX ix_src_mat (source_material_id),
+        INDEX ix_tgt_mat (target_material_id),
+        FOREIGN KEY (source_material_id) REFERENCES materials(id),
+        FOREIGN KEY (target_material_id) REFERENCES materials(id)
+    )''')
+    conn.commit()
+    print("  OK")
+except Exception as e:
+    if "already exists" in str(e).lower():
+        print("  Already exists - OK")
+        conn.rollback()
+    else:
+        print(f"  Error: {e}")
+        conn.rollback()
+
 conn.close()
 print()
 print('Migration complete!')

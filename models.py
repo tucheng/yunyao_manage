@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, Boolean
+from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, Boolean, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -23,9 +23,10 @@ class User(Base):
     location = Column(String(100), default="")  # 所在地
     balance = Column(Float, default=0.0)
     trust_score = Column(Float, default=100.0)  # 信任分 0-100
-    level_id = Column(Integer, ForeignKey("user_levels.id"), default=1)
+    level_id = Column(Integer, ForeignKey("user_levels.id"), default=5)
     is_muted = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False)
+    expires_at = Column(DateTime(timezone=True), nullable=False, server_default=text("'2027-07-09 00:00:00'"), comment="使用期限")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
     @classmethod
@@ -395,18 +396,35 @@ class RecipeSeger(Base):
     __tablename__ = "recipe_seger"
 
     id = Column(Integer, primary_key=True, index=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, unique=True, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, unique=True)
     seger_unified = Column(String(500), default="")       # 归一化表达式
     seger_al2o3 = Column(Float, nullable=True)             # Al₂O₃ 摩尔比
     seger_sio2 = Column(Float, nullable=True)              # SiO₂ 摩尔比
     seger_ro = Column(Float, nullable=True)                # RO+R₂O 总和
-    acid_base_ratio = Column(Float, nullable=True)         # SiO₂/Al₂O₃（酸碱度）
-    acid_base_note = Column(String(500), default="")       # 酸碱度说明
+    acid_base_ratio = Column(Float, nullable=True)         # SiO₂/Al₂O₃
+    acid_base_note = Column(String(500), default="")
     seger_detail = Column(Text, default="")                # JSON: 各氧化物摩尔明细
     calculated_at = Column(DateTime(timezone=True), nullable=True)
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
     recipe = relationship("Recipe", backref="seger")
+
+
+class MaterialSubstitution(Base):
+    """材料替换关联表"""
+    __tablename__ = "material_substitutions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    source_material_id = Column(Integer, ForeignKey("materials.id"), nullable=False, comment="源材料（需要被替换的）")
+    target_material_id = Column(Integer, ForeignKey("materials.id"), nullable=False, comment="目标材料（替换建议）")
+    similarity_score = Column(Float, default=0.0, comment="成分相似度 0-100")
+    status = Column(String(20), default="pending", comment="pending/confirmed/ignored")
+    note = Column(String(500), default="", comment="替换备注（如用量调整建议）")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+    source_material = relationship("Material", foreign_keys=[source_material_id])
+    target_material = relationship("Material", foreign_keys=[target_material_id])
 
 
 class UserLevel(Base):
@@ -419,6 +437,7 @@ class UserLevel(Base):
     max_paid_recipes = Column(Integer, default=0)
     max_free_recipes = Column(Integer, default=10)
     max_works = Column(Integer, default=50)
+    max_views = Column(Integer, default=0, comment="每日可查看配方上限，0=不限")
     description = Column(String(200), default="")
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -495,6 +514,21 @@ class WalletTransaction(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
+class RecipeVersion(Base):
+    """配方历史版本快照"""
+    __tablename__ = "recipe_versions"
+
+    id = Column(Integer, primary_key=True, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, index=True)
+    version_no = Column(Integer, nullable=False)  # 1, 2, 3...
+    recipe_data = Column(Text, nullable=False)  # JSON: recipe 表所有字段
+    ingredients_data = Column(Text, nullable=False)  # JSON: ingredients 列表
+    seger_data = Column(Text, nullable=True)  # JSON: seger 结果
+    note = Column(String(200), default="")  # 自动生成的备注
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
 class GlazyMaterial(Base):
     """Glazy 海外材料数据"""
     __tablename__ = "glazy_materials"
@@ -516,4 +550,30 @@ class GlazyMaterial(Base):
     b2o3 = Column(Float, nullable=True)
     p2o5 = Column(Float, nullable=True)
     loi = Column(Float, nullable=True)
-    thermal_expansion = Column(Float, nullable=True)
+
+
+class RedeemCode(Base):
+    """兑换码"""
+    __tablename__ = "redeem_codes"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code = Column(String(32), unique=True, index=True, nullable=False, comment="兑换码")
+    days = Column(Integer, nullable=False, comment="可兑换天数")
+    max_uses = Column(Integer, default=1, comment="最大使用次数")
+    current_uses = Column(Integer, default=0, comment="已使用次数")
+    is_active = Column(Boolean, default=True)
+    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class RedeemLog(Base):
+    """兑换记录"""
+    __tablename__ = "redeem_logs"
+
+    id = Column(Integer, primary_key=True, index=True)
+    code_id = Column(Integer, ForeignKey("redeem_codes.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    days_added = Column(Integer, nullable=False)
+    before_expiry = Column(DateTime(timezone=True), nullable=True, comment="兑换前使用期限")
+    after_expiry = Column(DateTime(timezone=True), nullable=True, comment="兑换后使用期限")
+    created_at = Column(DateTime(timezone=True), server_default=func.now())

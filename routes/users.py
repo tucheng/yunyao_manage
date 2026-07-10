@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
+from typing import Optional
 from sqlalchemy.orm import Session
 from auth_utils import get_current_user
 from database import get_db
@@ -6,6 +7,7 @@ from encryption_utils import encrypt, decrypt, hash_for_lookup
 from models import User, UserLevel, Recipe, Work, Follow, Favorite, FiringCurve, ToBeFired
 from auth_utils import get_current_user
 from models import AppSetting
+from sqlalchemy import func
 import json
 
 PAID_ENABLED_KEY = "paid_enabled"
@@ -79,8 +81,8 @@ def get_profile(user_id: int = Query(...), db: Session = Depends(get_db)):
         "curve_count": curve_count,
         "to_fire_count": to_fire_count,
         "created_at": user.created_at,
+        "expires_at": str(user.expires_at) if user.expires_at else "",
     }
-
 
 @router.get("/me")
 def get_my_profile(request: Request, db: Session = Depends(get_db)):
@@ -180,6 +182,61 @@ def update_profile(
         "location": user.location or "",
         "phone": decrypt(user.phone or "") or "",
         "email": decrypt(user.email or "") or "",
+    }
+
+
+# ========= 发布资格检查 =========
+
+
+@router.get("/publish-status")
+def get_publish_status(user_id: Optional[int] = Query(None), db: Session = Depends(get_db)):
+    """获取当前用户的发布资格状态。user_id 为空时返回默认等级的配额"""
+    from datetime import datetime
+
+    level = None
+    recipe_count = 0
+    free_count = 0
+    work_count = 0
+    is_guest = False
+
+    if user_id:
+        user = db.query(User).filter(User.id == user_id).first()
+        if not user:
+            return {"ok": False, "reason": "用户不存在"}
+        level = db.query(UserLevel).filter(UserLevel.id == (user.level_id or 1)).first()
+        if user.is_muted:
+            return {"ok": False, "reason": "你已被禁言，无法发布内容"}
+        if user.expires_at and datetime.now() > user.expires_at:
+            return {"ok": False, "reason": "账号已过期，无法发布内容"}
+        recipe_count = db.query(func.count(Recipe.id)).filter(Recipe.user_id == user_id).scalar() or 0
+        free_count = db.query(func.count(Recipe.id)).filter(
+            Recipe.user_id == user_id, Recipe.price == 0
+        ).scalar() or 0
+        work_count = db.query(func.count(Work.id)).filter(Work.user_id == user_id).scalar() or 0
+    else:
+        is_guest = True
+        level = db.query(UserLevel).filter(UserLevel.id == 1).first()
+
+    if not level:
+        return {"ok": False, "reason": "用户等级异常"}
+
+    can_publish_recipe = free_count < level.max_free_recipes if level.max_free_recipes > 0 else True
+    recipe_remaining = max(0, level.max_free_recipes - free_count) if level.max_free_recipes > 0 else -1
+
+    can_publish_work = work_count < level.max_works if level.max_works > 0 else True
+    work_remaining = max(0, level.max_works - work_count) if level.max_works > 0 else -1
+
+    return {
+        "ok": True,
+        "can_publish_recipe": can_publish_recipe,
+        "can_publish_work": can_publish_work,
+        "recipe_remaining": recipe_remaining,
+        "work_remaining": work_remaining,
+        "recipe_limit": level.max_free_recipes,
+        "recipe_count": recipe_count,
+        "work_limit": level.max_works,
+        "work_count": work_count,
+        "is_guest": is_guest,
     }
 
 

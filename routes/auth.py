@@ -19,6 +19,7 @@ from database import get_db
 from encryption_utils import encrypt, hash_for_lookup
 from models import User
 from verification_sender import get_settings as get_verification_settings, send_verification_code
+from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
@@ -267,6 +268,7 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         username=username,
         nickname=username,
         balance=10000,
+        expires_at=datetime.now() + timedelta(days=2),
     )
     db.add(user)
     db.commit()
@@ -322,7 +324,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     if code and ENABLE_MOCK_LOGIN and not WX_APPID:
         user = db.query(User).filter(User.openid == code).first()
         if not user:
-            user = User(openid=code, nickname=_default_nickname(db), balance=10000)
+            user = User(openid=code, nickname=_default_nickname(db), balance=10000, expires_at=datetime.now() + timedelta(days=2))
             db.add(user)
             db.commit()
             db.refresh(user)
@@ -346,7 +348,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="登录失败")
         user = db.query(User).filter(User.openid == data["openid"]).first()
         if not user:
-            user = User(openid=data["openid"], balance=0)
+            user = User(openid=data["openid"], balance=0, expires_at=datetime.now() + timedelta(days=2))
             db.add(user)
             db.commit()
             db.refresh(user)

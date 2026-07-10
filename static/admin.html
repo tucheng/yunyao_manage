@@ -7,12 +7,32 @@
 <style>
 * { margin: 0; padding: 0; box-sizing: border-box; }
 body { font-family: -apple-system, BlinkMacSystemFont, sans-serif; background: #f5f3f0; color: #333; }
-.header { background: #2c3e50; color: #fff; padding: 14px 20px; display: flex; align-items: center; gap: 16px; }
+.header { background: #2c3e50; color: #fff; padding: 14px 20px; display: flex; align-items: center; gap: 16px; position: relative; }
 .header h1 { font-size: 18px; }
-.header .nav { display: flex; gap: 12px; margin-left: auto; }
-.header .nav a { color: #bdc3c7; text-decoration: none; font-size: 14px; cursor: pointer; padding: 4px 10px; border-radius: 4px; }
-.header .nav a:hover { color: #fff; background: rgba(255,255,255,0.1); }
-.header .nav a.active { color: #fff; background: rgba(255,255,255,0.2); }
+.header .nav { margin-left: auto; }
+
+/* ===== 分类菜单 ===== */
+.nav { display: flex; align-items: center; gap: 4px; margin-left: auto; }
+.menu-group { position: relative; }
+.menu-cat-btn {
+  background: none; border: 1px solid transparent; color: #bdc3c7;
+  padding: 6px 12px; border-radius: 6px; font-size: 14px; cursor: pointer;
+  white-space: nowrap; user-select: none;
+}
+.menu-cat-btn:hover, .menu-cat-btn.open { color: #fff; background: rgba(255,255,255,0.1); border-color: rgba(255,255,255,0.15); }
+.cat-dropdown {
+  position: absolute; top: 100%; right: 0; min-width: 140px;
+  background: #fff; border-radius: 8px; box-shadow: 0 4px 16px rgba(0,0,0,0.15);
+  padding: 4px 0; z-index: 999; display: none; overflow: hidden;
+}
+.cat-dropdown.show { display: block; }
+.cat-dropdown a {
+  display: block; padding: 10px 16px; font-size: 14px;
+  color: #333; text-decoration: none; cursor: pointer;
+}
+.cat-dropdown a:last-child { border-bottom: none; }
+.cat-dropdown a:hover { background: #f5f3f0; color: #8B6914; }
+.cat-dropdown a.active { background: #fef9e7; color: #8B6914; font-weight: 600; }
 .container { max-width: 1200px; margin: 0 auto; padding: 20px; }
 .section { display: none; }
 .section.active { display: block; }
@@ -57,6 +77,8 @@ tr:hover { background: #f8f8f8; }
 .toast.success { background: #27ae60; }
 .toast.error { background: #e74c3c; }
 .help { color: #777; font-size: 12px; line-height: 1.6; margin-top: 4px; }
+.tip { cursor: help; color: #aaa; font-size: 13px; margin-left: 2px; }
+.tip:hover { color: #8B6914; }
 .settings-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; }
 .config-toolbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
 .config-table input, .config-table textarea { width: 100%; padding: 7px 8px; border: 1px solid #ddd; border-radius: 6px; font-size: 12px; }
@@ -96,14 +118,31 @@ tr:hover { background: #f8f8f8; }
   <div class="header">
     <h1>☁️ 云窑后台</h1>
     <div class="nav">
-      <a class="active" onclick="switchTab('dashboard')">概览</a>
-      <a onclick="switchTab('users')">用户管理</a>
-      <a onclick="switchTab('levels')">等级管理</a>
-      <a onclick="switchTab('temperature-config')">温度配置</a>
-      <a onclick="switchTab('color-config')">颜色配置</a>
-      <a onclick="switchTab('work-attributes')">作品属性</a>
-      <a onclick="switchTab('verification')">验证码配置</a>
-      <a onclick="switchTab('system')">系统设置</a>
+      <div class="menu-group">
+        <button class="menu-cat-btn" data-menu="user" onclick="toggleCatMenu('user')">用户管理 ▾</button>
+        <div class="cat-dropdown" id="cat-user">
+          <a onclick="switchTab('users')">用户管理</a>
+          <a onclick="switchTab('levels')">等级管理</a>
+          <a onclick="switchTab('redeem')">兑换码管理</a>
+        </div>
+      </div>
+      <div class="menu-group">
+        <button class="menu-cat-btn" data-menu="yun" onclick="toggleCatMenu('yun')">云窑功能 ▾</button>
+        <div class="cat-dropdown" id="cat-yun">
+          <a class="active" onclick="switchTab('dashboard')">概览</a>
+          <a onclick="switchTab('materials')">材料管理</a>
+          <a onclick="switchTab('work-attributes')">作品属性</a>
+          <a onclick="switchTab('temperature-config')">温度配置</a>
+          <a onclick="switchTab('color-config')">颜色配置</a>
+        </div>
+      </div>
+      <div class="menu-group">
+        <button class="menu-cat-btn" data-menu="sys" onclick="toggleCatMenu('sys')">系统设置 ▾</button>
+        <div class="cat-dropdown" id="cat-sys">
+          <a onclick="switchTab('verification')">验证码配置</a>
+          <a onclick="switchTab('system')">系统设置</a>
+        </div>
+      </div>
     </div>
   </div>
 
@@ -140,7 +179,7 @@ tr:hover { background: #f8f8f8; }
         </div>
         <table>
           <thead><tr>
-            <th>ID</th><th>等级名称</th><th>可发付费</th><th>付费上限</th><th>免费上限</th><th>作品上限</th><th>用户数</th><th>操作</th>
+            <th>ID</th><th>等级名称</th><th>可发付费</th><th>付费上限</th><th>免费上限</th><th>作品上限</th><th>每日查看上限</th><th>用户数</th><th>操作</th>
           </tr></thead>
           <tbody id="levelTableBody"></tbody>
         </table>
@@ -255,6 +294,59 @@ tr:hover { background: #f8f8f8; }
       </div>
     </div>
 
+    <!-- 兑换码管理 -->
+    <div id="tab-redeem" class="section">
+      <div class="card">
+        <h2>生成兑换码</h2>
+        <div class="form-row">
+          <div class="form-group">
+            <label>生成数量</label>
+            <input type="number" id="redeemCount" value="1" min="1" max="100">
+          </div>
+          <div class="form-group">
+            <label>可兑换天数</label>
+            <input type="number" id="redeemDays" value="30" min="1">
+          </div>
+          <div class="form-group">
+            <label>每个码可用次数</label>
+            <input type="number" id="redeemMaxUses" value="1" min="1">
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="generateCodes()">批量生成</button>
+        <div id="generateResult" style="margin-top:10px;font-size:13px;color:#27ae60;display:none"></div>
+      </div>
+      <div class="card">
+        <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+          <h2>兑换码列表 <span id="redeemStats" style="font-size:13px;font-weight:normal;color:#888"></span></h2>
+          <button class="btn btn-sm" onclick="loadRedeemCodes()">🔄 刷新</button>
+        </div>
+        <table>
+          <thead><tr>
+            <th>ID</th><th>兑换码</th><th>天数</th><th>已用/可用</th><th>使用人</th><th>兑换前</th><th>兑换后</th><th>状态</th><th>创建时间</th>
+          </tr></thead>
+          <tbody id="redeemTableBody"></tbody>
+        </table>
+        <div class="pagination" id="redeemPagination"></div>
+      </div>
+    </div>
+
+    <!-- 材料管理 -->
+    <div id="tab-materials" class="section">
+      <div class="card">
+        <div class="search-bar">
+          <input id="materialSearch" placeholder="搜索材料名称..." onkeydown="if(event.key==='Enter')loadMaterials()">
+          <button class="btn btn-primary" onclick="loadMaterials()">搜索</button>
+        </div>
+        <table>
+          <thead><tr>
+            <th>ID</th><th>名称</th><th>分子式</th><th>来源</th><th>操作</th>
+          </tr></thead>
+          <tbody id="materialTableBody"></tbody>
+        </table>
+        <div class="pagination" id="materialPagination"></div>
+      </div>
+    </div>
+
     <!-- 系统设置 -->
     <div id="tab-system" class="section">
       <div class="card">
@@ -302,15 +394,20 @@ tr:hover { background: #f8f8f8; }
     <div class="form-group">
       <label style="display:flex;align-items:center;gap:8px;font-weight:normal">
         <input type="checkbox" id="levelEditCanPaid"> 允许发布付费配方
+        <span class="tip" title="开启后该等级用户发布的配方可以选择「付费」模式，其他用户需要购买才能查看">ⓘ</span>
       </label>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>付费配方上限</label><input type="number" id="levelEditMaxPaid"></div>
-      <div class="form-group"><label>免费配方上限</label><input type="number" id="levelEditMaxFree"></div>
+      <div class="form-group"><label>付费配方上限 <span class="tip" title="该等级用户最多可以发布多少个付费配方">ⓘ</span></label><input type="number" id="levelEditMaxPaid"></div>
+      <div class="form-group"><label>免费配方上限 <span class="tip" title="该等级用户最多可以发布多少个免费配方（公开配方）">ⓘ</span></label><input type="number" id="levelEditMaxFree"></div>
     </div>
     <div class="form-row">
-      <div class="form-group"><label>作品上限</label><input type="number" id="levelEditMaxWorks"></div>
-      <div class="form-group"><label>排序</label><input type="number" id="levelEditSort"></div>
+      <div class="form-group"><label>作品上限 <span class="tip" title="该等级用户最多可以发布多少个作品（不是配方，是作品展示）">ⓘ</span></label><input type="number" id="levelEditMaxWorks"></div>
+      <div class="form-group"><label>每日查看上限 <span class="tip" title="该等级用户每天最多可以查看多少个配方详情页，0=不限制">ⓘ</span></label><input type="number" id="levelEditMaxViews" placeholder="0=不限"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>排序 <span class="tip" title="数字越小在列表中越靠前">ⓘ</span></label><input type="number" id="levelEditSort"></div>
+      <div class="form-group"></div>
     </div>
     <div class="form-group"><label>描述</label><textarea id="levelEditDesc" rows="2"></textarea></div>
     <div style="display:flex;gap:8px;margin-top:16px;justify-content:space-between">
@@ -341,12 +438,14 @@ function doLogin() {
       TOKEN = d.token;
       document.getElementById('loginPage').style.display = 'none';
       document.getElementById('app').style.display = 'block';
+      document.querySelector('.header h1').textContent = '☁️ 云窑后台 · 概览';
       loadDashboard();
       loadUsers();
       loadLevels();
       loadWorkSearchSettings();
       loadVerificationSettings();
       loadSystemSettings();
+      loadRedeemCodes();
     })
     .catch(e => { TOKEN = ''; errEl.textContent = e.message; errEl.style.display = 'block'; });
 }
@@ -365,9 +464,16 @@ function api(path, opts={}) {
 
 function switchTab(name) {
   document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
-  document.querySelectorAll('.nav a').forEach(a => a.classList.remove('active'));
+  document.querySelectorAll('.cat-dropdown a').forEach(a => a.classList.remove('active'));
   document.getElementById('tab-' + name).classList.add('active');
-  document.querySelector('.nav a[onclick*="' + name + '"]').classList.add('active');
+  const activeLink = document.querySelector(`.cat-dropdown a[onclick*="${name}"]`);
+  if (activeLink) activeLink.classList.add('active');
+  // 更新标题
+  const label = activeLink ? activeLink.textContent : name;
+  document.querySelector('.header h1').textContent = '☁️ 云窑后台 · ' + label;
+  // 收起所有菜单
+  document.querySelectorAll('.cat-dropdown').forEach(d => d.classList.remove('show'));
+  document.querySelectorAll('.menu-cat-btn').forEach(b => b.classList.remove('open'));
   if (name === 'temperature-config' || name === 'color-config') {
     loadWorkSearchSettings();
   }
@@ -467,6 +573,7 @@ function loadLevels() {
         <td>${l.max_paid_recipes}</td>
         <td>${l.max_free_recipes}</td>
         <td>${l.max_works}</td>
+        <td>${l.max_views || '不限'}</td>
         <td>${l.user_count}</td>
         <td><button class="btn btn-sm" onclick="showLevelModal(${l.id})">编辑</button></td>
       </tr>
@@ -489,6 +596,7 @@ function showLevelModal(id) {
       document.getElementById('levelEditMaxPaid').value = l.max_paid_recipes;
       document.getElementById('levelEditMaxFree').value = l.max_free_recipes;
       document.getElementById('levelEditMaxWorks').value = l.max_works;
+      document.getElementById('levelEditMaxViews').value = l.max_views;
       document.getElementById('levelEditSort').value = l.sort_order;
       document.getElementById('levelEditDesc').value = l.description;
     });
@@ -498,6 +606,7 @@ function showLevelModal(id) {
     document.getElementById('levelEditMaxPaid').value = 0;
     document.getElementById('levelEditMaxFree').value = 10;
     document.getElementById('levelEditMaxWorks').value = 50;
+    document.getElementById('levelEditMaxViews').value = 0;
     document.getElementById('levelEditSort').value = 99;
     document.getElementById('levelEditDesc').value = '';
   }
@@ -511,6 +620,7 @@ function saveLevel() {
     max_paid_recipes: parseInt(document.getElementById('levelEditMaxPaid').value) || 0,
     max_free_recipes: parseInt(document.getElementById('levelEditMaxFree').value) || 10,
     max_works: parseInt(document.getElementById('levelEditMaxWorks').value) || 50,
+    max_views: parseInt(document.getElementById('levelEditMaxViews').value) || 0,
     sort_order: parseInt(document.getElementById('levelEditSort').value) || 0,
     description: document.getElementById('levelEditDesc').value,
   };
@@ -703,6 +813,52 @@ function loadSystemSettings() {
   }).catch(e => toast(e.message, 'error'));
 }
 
+// ====== 兑换码管理 ======
+let redeemPage = 1;
+
+function loadRedeemCodes(p) {
+  if (p !== undefined) redeemPage = p;
+  api('/redeem/admin/codes?page=' + redeemPage + '&page_size=20')
+    .then(d => {
+      const tbody = document.getElementById('redeemTableBody');
+      tbody.innerHTML = (d.items || []).map(c => {
+        return `<tr>
+          <td>${c.id}</td>
+          <td><code style="font-size:14px;letter-spacing:1px;font-weight:600">${esc(c.code)}</code></td>
+          <td>${c.days} 天</td>
+          <td>${c.current_uses}/${c.max_uses}</td>
+          <td style="font-size:12px;color:#555">${(c.logs || []).map(l => esc(l.user)).join('<br>') || '-'}</td>
+          <td style="font-size:12px;color:#888;white-space:nowrap">${(c.logs || []).map(l => l.before_expiry ? l.before_expiry.slice(0,16).replace('T',' ') : '-').join('<br>') || '-'}</td>
+          <td style="font-size:12px;color:#27ae60;white-space:nowrap">${(c.logs || []).map(l => l.after_expiry ? l.after_expiry.slice(0,16).replace('T',' ') : '-').join('<br>') || '-'}</td>
+          <td>${c.is_active ? '<span style="color:#27ae60">有效</span>' : '<span style="color:#999">已停用</span>'}</td>
+          <td style="color:#888;font-size:12px">${c.created_at}</td>
+        </tr>`;
+      }).join('');
+      const totalPages = Math.ceil(d.total / d.page_size);
+      document.getElementById('redeemPagination').innerHTML = `
+        <button class="btn btn-sm" onclick="loadRedeemCodes(${redeemPage-1})" ${redeemPage<=1?'disabled':''}>‹</button>
+        <span>第 ${d.page}/${totalPages} 页 (共 ${d.total} 个码)</span>
+        <button class="btn btn-sm" onclick="loadRedeemCodes(${redeemPage+1})" ${redeemPage>=totalPages?'disabled':''}>›</button>
+      `;
+      document.getElementById('redeemStats').textContent = `共 ${d.total} 个 · 未使用 ${d.unused_count} 个`;
+    }).catch(e => toast(e.message, 'error'));
+}
+
+function generateCodes() {
+  const count = parseInt(document.getElementById('redeemCount').value) || 1;
+  const days = parseInt(document.getElementById('redeemDays').value) || 30;
+  const maxUses = parseInt(document.getElementById('redeemMaxUses').value) || 1;
+  api('/redeem/admin/generate', {
+    method: 'POST',
+    body: JSON.stringify({ count, days, max_uses: maxUses }),
+  }).then(d => {
+    const el = document.getElementById('generateResult');
+    el.innerHTML = '✅ 成功生成 ' + d.count + ' 个兑换码：<br><code style="font-size:13px">' + d.codes.join('</code>、<code>') + '</code>';
+    el.style.display = 'block';
+    loadRedeemCodes(1);
+  }).catch(e => toast(e.message, 'error'));
+}
+
 function togglePaidEnabled() {
   const checked = document.getElementById('paidEnabledToggle').checked;
   api('/admin/paid-enabled', {
@@ -886,17 +1042,206 @@ function saveAllAttributes() {
   }).catch(e => toast('保存失败: ' + e.message, 'error'));
 }
 
+// ====== 材料管理 ======
+
+let materialPage = 1;
+let lastMaterialData = [];
+
+function loadMaterials() {
+  const search = document.getElementById('materialSearch').value.trim();
+  const params = new URLSearchParams({ page: materialPage, page_size: 30 });
+  if (search) params.set('search', search);
+  api('/admin/materials?' + params.toString()).then(data => {
+    lastMaterialData = data.data;
+    const tbody = document.getElementById('materialTableBody');
+    tbody.innerHTML = data.data.map(m => {
+      const srcLabel = m.source === 'local' ? '国产' : m.source === 'glazy' ? '海外' : (m.source || '-');
+      return `<tr>
+        <td>${m.id}</td>
+        <td><strong>${esc(m.name)}</strong>${m.name_en ? '<br><small style="color:#999">' + esc(m.name_en) + '</small>' : ''}</td>
+        <td style="font-size:12px;color:#666;max-width:160px;overflow:hidden;text-overflow:ellipsis">${esc(m.formula || '-')}</td>
+        <td><span class="badge ${m.source === 'local' ? 'badge-free' : 'badge-paid'}">${srcLabel}</span></td>
+        <td>
+          <button class="btn btn-sm" onclick="showSubstitutions(${m.id})">相似品</button>
+          <button class="btn btn-sm btn-primary" onclick="showMaterialDetail(${m.id})" style="margin-left:4px">详情</button>
+        </td>
+      </tr>`;
+    }).join('');
+
+    const totalPages = Math.ceil(data.total / 30);
+    const pagination = document.getElementById('materialPagination');
+    pagination.innerHTML = `<button class="btn btn-sm" onclick="materialPage--;loadMaterials()" ${materialPage <= 1 ? 'disabled' : ''}>‹</button>
+      <span>第 ${data.page} / ${totalPages} 页</span>
+      <button class="btn btn-sm" onclick="materialPage++;loadMaterials()" ${materialPage >= totalPages ? 'disabled' : ''}>›</button>`;
+  }).catch(e => toast(e.message, 'error'));
+}
+
+// ====== 材料相似品（含氧化物对比） ======
+const OXIDE_NAMES = [
+  ['SiO2','sio2'],['Al2O3','al2o3'],['Fe2O3','fe2o3'],['TiO2','tio2'],
+  ['CaO','cao'],['MgO','mgo'],['Na2O','na2o'],['K2O','k2o'],
+  ['ZnO','zno'],['B2O3','b2o3'],['P2O5','p2o5'],['Li2O','li2o'],
+  ['MnO2','mno2'],['CoO','coo'],['SnO2','sno2'],['CuO','cuo'],
+  ['Cr2O3','cr2o3'],['PbO','pbo'],['BaO','bao'],['SrO','sro'],['LOI','loi'],
+];
+
+function showSubstitutions(materialId) {
+  const src = lastMaterialData.find(x => x.id === materialId);
+  if (!src) { toast('未找到原材料数据', 'error'); return; }
+  api('/materials/' + materialId + '/substitutions').then(subs => {
+    if (!subs.length) {
+      toast('暂无相似品数据', 'error');
+      return;
+    }
+    // 收集有数据的氧化物
+    const oxides = OXIDE_NAMES.filter(([,k]) => src[k] != null || subs.some(s => s[k] != null));
+    const oxideLabels = oxides.map(([label]) => label);
+    const oxideKeys = oxides.map(([, key]) => key);
+
+    // === 转置：每行一个材料，每列一个氧化物 ===
+    let html = `<div style="max-height:70vh;overflow:auto">
+      <table style="font-size:12px;white-space:nowrap">
+        <thead><tr>
+          <th style="position:sticky;top:0;background:#fafafa;z-index:1">材料 / 成分</th>
+          ${oxideLabels.map(l => `<th style="position:sticky;top:0;background:#fafafa;z-index:1">${l}</th>`).join('')}
+          <th style="position:sticky;top:0;background:#fafafa;z-index:1">相似度</th>
+          <th style="position:sticky;top:0;background:#fafafa;z-index:1">操作</th>
+        </tr></thead>
+        <tbody>`;
+    // 第一行：原料
+    html += `<tr style="background:#fff8e1">
+      <td style="font-weight:600;color:#8B6914"><strong>${esc(src.name)}</strong><br><small>原料</small></td>`;
+    oxideKeys.forEach(k => {
+      const v = src[k];
+      html += `<td style="text-align:center;font-weight:600">${v != null ? v : '-'}</td>`;
+    });
+    html += `<td style="text-align:center;color:#999">-</td>
+      <td style="text-align:center;color:#ccc">-</td>
+      </tr>`;
+    // 相似品行
+    subs.forEach(s => {
+      const statusLabel = s.status === 'confirmed' ? '已确认' : s.status === 'ignored' ? '已忽略' : '待审';
+      html += `<tr>
+        <td style="font-weight:600">${esc(s.target_name)}<br><small style="color:#888">${statusLabel}</small></td>`;
+      oxideKeys.forEach(k => {
+        const tVal = s[k];
+        const srcVal = src[k];
+        const diff = (srcVal != null && tVal != null) ? (tVal - srcVal).toFixed(2) : null;
+        let cell = tVal != null ? tVal : '-';
+        if (diff != null && Math.abs(diff) > 0.5) {
+          cell += ` <span style="color:${diff > 0 ? '#e74c3c' : '#27ae60'};font-weight:600">(${diff > 0 ? '+' : ''}${diff})</span>`;
+        }
+        html += `<td style="text-align:center">${cell}</td>`;
+      });
+      html += `<td style="text-align:center">${s.similarity_score}%</td>
+        <td style="text-align:center;white-space:nowrap">`;
+      if (s.status !== 'confirmed') {
+        html += `<button class="btn btn-sm btn-primary" onclick="confirmSub(${s.id})">确认</button> `;
+      }
+      if (s.status !== 'ignored') {
+        html += `<button class="btn btn-sm" onclick="ignoreSub(${s.id})">忽略</button>`;
+      }
+      html += `</td>
+        </tr>`;
+    });
+    html += `</tbody></table></div>`;
+    showModal(html);
+  }).catch(e => toast(e.message, 'error'));
+}
+
+function confirmSub(id) {
+  api('/materials/substitutions/' + id, { method: 'PATCH', body: JSON.stringify({ status: 'confirmed' }) })
+    .then(() => toast('已确认')).catch(e => toast(e.message, 'error'));
+}
+
+function ignoreSub(id) {
+  api('/materials/substitutions/' + id, { method: 'PATCH', body: JSON.stringify({ status: 'ignored' }) })
+    .then(() => toast('已忽略')).catch(e => toast(e.message, 'error'));
+}
+
+// ====== 材料详情弹窗 ======
+function showMaterialDetail(id) {
+  const m = lastMaterialData.find(x => x.id === id);
+  if (!m) { toast('未找到材料', 'error'); return; }
+  const oxides = [
+    ['SiO2', m.sio2], ['Al2O3', m.al2o3], ['Fe2O3', m.fe2o3],
+    ['TiO2', m.tio2], ['CaO', m.cao], ['MgO', m.mgo],
+    ['Na2O', m.na2o], ['K2O', m.k2o], ['ZnO', m.zno],
+    ['B2O3', m.b2o3], ['P2O5', m.p2o5], ['Li2O', m.li2o],
+    ['MnO2', m.mno2], ['CoO', m.coo], ['SnO2', m.sno2],
+    ['CuO', m.cuo], ['Cr2O3', m.cr2o3], ['PbO', m.pbo],
+    ['BaO', m.bao], ['SrO', m.sro], ['LOI', m.loi],
+  ].filter(([, v]) => v != null);
+  const thermal = m.thermal_expansion != null ? `<tr><td>热膨胀</td><td>${m.thermal_expansion}</td></tr>` : '';
+  const formula = m.formula ? `<tr><td>分子式</td><td>${esc(m.formula)}</td></tr>` : '';
+  const mw = m.molecular_weight ? `<tr><td>分子量</td><td>${esc(m.molecular_weight)}</td></tr>` : '';
+  const cat = m.category ? `<tr><td>分类</td><td>${esc(m.category)}</td></tr>` : '';
+  let html = `<div style="min-width:320px">
+    <h3 style="margin-bottom:8px">${esc(m.name)}</h3>
+    <p style="font-size:13px;color:#888;margin-bottom:12px">${m.name_en ? esc(m.name_en) : ''} · ${m.source === 'local' ? '国产' : '海外'}</p>
+    <table style="font-size:13px">
+      <thead><tr><th style="width:80px">成分</th><th>含量%</th></tr></thead>
+      <tbody>
+        ${formula}${mw}${cat}
+        ${oxides.map(o => `<tr><td>${o[0]}</td><td>${o[1]}</td></tr>`).join('')}
+        ${thermal}
+      </tbody>
+    </table>
+  </div>`;
+  showModal(html);
+}
+
+let modalContainer = null;
+function showModal(contentHtml) {
+  if (!modalContainer) {
+    modalContainer = document.createElement('div');
+    modalContainer.className = 'modal';
+    modalContainer.innerHTML = '<div class="modal-content" style="max-width:700px"><div id="modalBody"></div><div style="margin-top:16px;text-align:right"><button class="btn" id="modalCloseBtn">关闭</button></div></div>';
+    modalContainer.addEventListener('click', function(e) { if (e.target === this) this.classList.remove('show'); });
+    document.body.appendChild(modalContainer);
+  }
+  document.getElementById('modalBody').innerHTML = contentHtml;
+  document.getElementById('modalCloseBtn').onclick = function() {
+    modalContainer.classList.remove('show');
+  };
+  modalContainer.classList.add('show');
+  modalContainer.id = 'subModal';
+}
+
 // 在切换 tab 时加载
 const origSwitchTab = switchTab;
 switchTab = function(name) {
   origSwitchTab(name);
+  if (name === 'redeem') { loadRedeemCodes(); }
   if (name === 'work-attributes') {
     loadWorkAttributes();
   }
+  if (name === 'materials') { loadMaterials(); }
 };
 
 function openModal(id) { document.getElementById(id).classList.add('show'); }
 function closeModal(id) { document.getElementById(id).classList.remove('show'); }
+
+// ====== 分类下拉菜单 ======
+function toggleCatMenu(name) {
+  const dropdown = document.getElementById('cat-' + name);
+  const btn = document.querySelector(`[data-menu="${name}"]`);
+  const isOpen = dropdown.classList.contains('show');
+  // 关闭其他所有
+  document.querySelectorAll('.cat-dropdown').forEach(d => d.classList.remove('show'));
+  document.querySelectorAll('.menu-cat-btn').forEach(b => b.classList.remove('open'));
+  if (!isOpen) {
+    dropdown.classList.add('show');
+    btn.classList.add('open');
+  }
+}
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.menu-group')) {
+    document.querySelectorAll('.cat-dropdown').forEach(d => d.classList.remove('show'));
+    document.querySelectorAll('.menu-cat-btn').forEach(b => b.classList.remove('open'));
+  }
+});
+
 function esc(s) { const d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
 function escAttr(s) { return esc(String(s)).replace(/\"/g, '&quot;'); }
 </script>

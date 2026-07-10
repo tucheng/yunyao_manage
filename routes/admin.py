@@ -116,6 +116,7 @@ def list_users(q: str = "", page: int = 1, page_size: int = Query(default=20, al
             "level_name": level["name"],
             "is_muted": bool(u.is_muted),
             "is_admin": bool(u.is_admin),
+            "expires_at": str(u.expires_at) if u.expires_at else "",
             "recipe_count": recipe_counts.get(u.id, 0),
             "paid_count": paid_counts.get(u.id, 0),
             "work_count": work_counts.get(u.id, 0),
@@ -148,6 +149,7 @@ def get_user(user_id: int, token: str = Query(...), db: Session = Depends(get_db
         "level_name": levels.get(u.level_id or 1, "普通用户"),
         "is_muted": bool(u.is_muted),
         "is_admin": bool(u.is_admin),
+        "expires_at": str(u.expires_at) if u.expires_at else "",
         "recipe_count": recipe_count,
         "paid_count": paid_count,
         "free_count": recipe_count - paid_count,
@@ -160,6 +162,7 @@ class UpdateUserBody(BaseModel):
     level_id: Optional[int] = None
     is_muted: Optional[bool] = None
     is_admin: Optional[bool] = None
+    expires_at: Optional[str] = None  # ISO 格式日期时间，空字符串重置为今天
 
 
 @router.put("/users/{user_id}")
@@ -181,6 +184,13 @@ def update_user(user_id: int, body: UpdateUserBody, token: str = Query(...), db:
     if body.is_admin is not None:
         u.is_admin = body.is_admin
 
+    if body.expires_at is not None:
+        from datetime import datetime
+        try:
+            u.expires_at = datetime.fromisoformat(body.expires_at) if body.expires_at else datetime.now()
+        except ValueError:
+            raise HTTPException(status_code=400, detail="expires_at 格式无效，请使用 ISO 格式如 2026-12-31T23:59:59")
+
     db.commit()
     return {"ok": True}
 
@@ -199,6 +209,7 @@ def list_levels(token: str = Query(...), db: Session = Depends(get_db)):
             "max_paid_recipes": l.max_paid_recipes,
             "max_free_recipes": l.max_free_recipes,
             "max_works": l.max_works,
+            "max_views": l.max_views,
             "description": l.description,
             "sort_order": l.sort_order,
             "user_count": db.query(User).filter(User.level_id == l.id).count(),
@@ -213,6 +224,7 @@ class LevelBody(BaseModel):
     max_paid_recipes: int = 0
     max_free_recipes: int = 10
     max_works: int = 50
+    max_views: int = 0
     description: str = ""
     sort_order: int = 0
 
@@ -559,4 +571,52 @@ def get_glazy_material(glazy_id: int, token: str = Query(...), db: Session = Dep
         "cao": m.cao, "fe2o3": m.fe2o3, "tio2": m.tio2,
         "zno": m.zno, "b2o3": m.b2o3, "p2o5": m.p2o5, "loi": m.loi,
         "thermal_expansion": m.thermal_expansion,
+    }
+
+
+@router.get("/materials")
+def admin_list_materials(
+    search: Optional[str] = Query(None),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(30, ge=1, le=200),
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    """管理员查看原材料列表"""
+    q = db.query(Material)
+    if search:
+        q = q.filter(
+            Material.name.like(f"%{search}%") |
+            Material.name_en.like(f"%{search}%")
+        )
+    total = q.count()
+    items = q.order_by(Material.source, Material.name).offset((page - 1) * page_size).limit(page_size).all()
+    return {
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+        "data": [
+            {
+                "id": m.id,
+                "name": m.name,
+                "name_en": m.name_en,
+                "source": m.source,
+                "source_id": m.source_id,
+                "formula": m.formula or "",
+                "molecular_weight": m.molecular_weight or "",
+                "category": m.category or "",
+                "sio2": m.sio2, "al2o3": m.al2o3,
+                "fe2o3": m.fe2o3, "tio2": m.tio2,
+                "cao": m.cao, "mgo": m.mgo,
+                "na2o": m.na2o, "k2o": m.k2o,
+                "zno": m.zno, "b2o3": m.b2o3,
+                "p2o5": m.p2o5, "li2o": m.li2o,
+                "mno2": m.mno2, "coo": m.coo,
+                "sno2": m.sno2, "cuo": m.cuo,
+                "cr2o3": m.cr2o3, "pbo": m.pbo,
+                "bao": m.bao, "sro": m.sro,
+                "loi": m.loi, "thermal_expansion": m.thermal_expansion,
+            }
+            for m in items
+        ],
     }

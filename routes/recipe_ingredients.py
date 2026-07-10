@@ -3,7 +3,7 @@ from sqlalchemy import text, func
 from sqlalchemy.orm import Session
 from database import get_db
 from auth_utils import user_id_from_request
-from models import Purchase, RecipeIngredient, Recipe, IngredientName
+from models import Purchase, RecipeIngredient, Recipe, IngredientName, Material
 from schemas import RecipeIngredientOut
 from security import encrypt, decrypt, hash_for_lookup
 from seger_calculator import calculate_seger
@@ -48,17 +48,29 @@ def get_ingredients(recipe_id: int, request: Request, db: Session = Depends(get_
     # 构建返回对象，逐个解密 name 和 amount
     result = []
     for row in rows:
+        decrypted_name = decrypt(row.name)
+        # 查找材料库中的匹配ID
+        mat = None
+        if decrypted_name:
+            name_clean = decrypted_name.replace(' ', '')
+            mat = (
+                db.query(Material)
+                .filter(func.replace(Material.name, ' ', '') == name_clean)
+                .order_by(Material.source.desc())
+                .first()
+            )
         result.append(RecipeIngredientOut(
             id=row.id,
             recipe_id=row.recipe_id,
             recipe_no=row.recipe_no,
-            name=decrypt(row.name),
+            name=decrypted_name,
             name_en=row.name_en,
             amount=decrypt(row.amount),
             unit=row.unit,
             note=row.note,
             is_additional=row.is_additional,
             sort_order=row.sort_order,
+            material_id=mat.id if mat else None,
         ))
     return result
 
