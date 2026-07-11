@@ -184,21 +184,32 @@ def _serialize_recipe_list_item(recipe, nickname, avatar, work_count=0, work_ima
 
 @router.get("/search/config")
 def recipe_search_config(db: Session = Depends(get_db)):
+    from models import WorkAttributeOption
+
+    # fallback 选项（跟作品搜索一致）
+    _KILN_OPTIONS = ["电窑", "气窑", "柴窑", "乐烧"]
+    _SURFACE_OPTIONS = ["亮光", "丝光", "蜡光", "柔光", "无光", "磨砂"]
+    _TRANSPARENCY_OPTIONS = ["高透", "微透", "半透", "不透"]
+
+    # 原料 — 从 IngredientName 表取
     rows = db.query(IngredientName.name).order_by(IngredientName.name).all()
     material_names = [r[0] for r in rows]
 
-    # 筛选项
-    kiln_types = [r[0] for r in db.query(Recipe.kiln_type).filter(Recipe.kiln_type != "", Recipe.kiln_type.isnot(None), Recipe.visibility.in_(["public", "paid", "showoff"])).distinct().order_by(Recipe.kiln_type).all()]
-    surfaces = [r[0] for r in db.query(Recipe.surface).filter(Recipe.surface != "", Recipe.surface.isnot(None), Recipe.visibility.in_(["public", "paid", "showoff"])).distinct().order_by(Recipe.surface).all()]
-    transparencies = [r[0] for r in db.query(Recipe.transparency).filter(Recipe.transparency != "", Recipe.transparency.isnot(None), Recipe.visibility.in_(["public", "paid", "showoff"])).distinct().order_by(Recipe.transparency).all()]
+    # 筛选项 — 跟作品搜索保持一致，从 WorkAttributeOption 取预制数据
+    attr_options = db.query(WorkAttributeOption).order_by(WorkAttributeOption.category, WorkAttributeOption.sort_order).all()
+    kiln_types = [o.value for o in attr_options if o.category == 'kiln_type']
+    surfaces = [o.value for o in attr_options if o.category == 'surface']
+    transparencies = [o.value for o in attr_options if o.category == 'transparency']
+
+    # 温度和颜色 — 从 Recipe 表取实际值（无对应预制数据）
     colors = [r[0] for r in db.query(Recipe.color).filter(Recipe.color != "", Recipe.color.isnot(None), Recipe.visibility.in_(["public", "paid", "showoff"])).distinct().order_by(Recipe.color).all()]
     temperatures = [r[0] for r in db.query(Recipe.temperature).filter(Recipe.temperature != "", Recipe.temperature.isnot(None), Recipe.visibility.in_(["public", "paid", "showoff"])).distinct().order_by(Recipe.temperature).all()]
 
     return {
         "materials": material_names,
-        "kiln_types": kiln_types,
-        "surfaces": surfaces,
-        "transparencies": transparencies,
+        "kiln_types": kiln_types or _KILN_OPTIONS,
+        "surfaces": surfaces or _SURFACE_OPTIONS,
+        "transparencies": transparencies or _TRANSPARENCY_OPTIONS,
         "temperatures": temperatures,
         "colors": colors,
         "has_work_options": [
