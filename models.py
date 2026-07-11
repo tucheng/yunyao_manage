@@ -14,7 +14,7 @@ class User(Base):
     phone = Column(String(200), unique=True, nullable=True)  # 加密存储
     email_hash = Column(String(64), unique=True, nullable=True, index=True)  # SHA-256，用于查询
     phone_hash = Column(String(64), unique=True, nullable=True, index=True)  # SHA-256，用于查询
-    password_hash = Column(String(200), default="")
+    password = Column(String(200), default="")  # bcrypt 哈希
     nickname = Column(String(50), default="")
     avatar = Column(String(200), default="")
     bio = Column(String(500), default="")  # 个人简介
@@ -158,6 +158,7 @@ class FiringCurve(Base):
     __tablename__ = "firing_curves"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True, comment="所属用户，null=系统默认")
     name = Column(String(100), nullable=False)
     type = Column(String(20), default="氧化")  # 氧化 / 还原
     target_temp = Column(String(20), default="")  # 目标温度，如"1220℃"

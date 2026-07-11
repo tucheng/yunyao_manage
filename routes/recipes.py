@@ -720,13 +720,13 @@ def get_recipe(
     user = db.query(User).filter(User.id == current_user_id).first()
     if user:
         level = db.query(UserLevel).filter(UserLevel.id == (user.level_id or 1)).first()
-        if level and level.max_views > 0:
+        if level and level.max_views is not None:
             today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
             today_views = db.query(func.count(RecipeView.id)).filter(
                 RecipeView.user_id == current_user_id,
                 RecipeView.created_at >= today_start,
             ).scalar() or 0
-            if today_views >= level.max_views:
+            if level.max_views <= 0 or today_views >= level.max_views:
                 raise HTTPException(
                     status_code=403,
                     detail=f"今日查看配方已达上限（{level.max_views}个），明天再来看吧"

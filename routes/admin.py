@@ -54,7 +54,7 @@ def admin_login(body: AdminLoginRequest, db: Session = Depends(get_db)):
         user = User.by_email_or_phone(db, uname)
     if not user:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
-    ok, _ = verify_password(body.password, user.password_hash if user else "")
+    ok, _ = verify_password(body.password, user.password if user else "")
     if not ok:
         raise HTTPException(status_code=401, detail="用户名或密码错误")
     if user.id not in ADMIN_USER_IDS and not user.is_admin:

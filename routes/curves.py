@@ -27,111 +27,70 @@ class CurveUpdate(BaseModel):
     sort_order: Optional[int] = None
 
 
-# 预置的常用烧制曲线
-DEFAULT_CURVES = [
+# ===== 新用户注册默认曲线 =====
+DEFAULT_USER_CURVES = [
     {
-        "name": "标准氧化 1220℃",
-        "type": "氧化",
-        "target_temp": "1220℃",
-        "description": "电窑常用标准曲线，氧化气氛，适合多数中温釉",
-        "segments": json.dumps([
-            {"rate": 100, "temp": 600, "hold": 0},
-            {"rate": 150, "temp": 1000, "hold": 0},
-            {"rate": 120, "temp": 1220, "hold": 15},
-        ]),
-        "sort_order": 1,
-    },
-    {
-        "name": "标准还原 1280℃",
+        "name": "标准瓷器",
         "type": "还原",
         "target_temp": "1280℃",
-        "description": "气窑还原曲线，△9-10，适合还原釉和瓷泥烧成",
+        "description": "标准瓷器烧制曲线，还原气氛△9-10，适合多数瓷泥和还原釉",
         "segments": json.dumps([
             {"rate": 80, "temp": 600, "hold": 0},
             {"rate": 100, "temp": 900, "hold": 0},
             {"rate": 80, "temp": 1280, "hold": 20},
         ]),
-        "sort_order": 2,
+        "sort_order": 0,
     },
     {
-        "name": "中温氧化 1240℃",
-        "type": "氧化",
-        "target_temp": "1240℃",
-        "description": "偏高温度段氧化曲线，适合某些特殊釉面效果",
-        "segments": json.dumps([
-            {"rate": 100, "temp": 600, "hold": 0},
-            {"rate": 130, "temp": 1000, "hold": 0},
-            {"rate": 100, "temp": 1240, "hold": 15},
-        ]),
-        "sort_order": 3,
-    },
-    {
-        "name": "低温氧化 1050℃",
+        "name": "陶罐",
         "type": "氧化",
         "target_temp": "1050℃",
-        "description": "低温段曲线，适合低温釉和二次烧成",
+        "description": "标准陶器烧制曲线，氧化气氛，适合陶泥和低温釉",
         "segments": json.dumps([
-            {"rate": 150, "temp": 600, "hold": 0},
-            {"rate": 200, "temp": 1050, "hold": 10},
+            {"rate": 100, "temp": 500, "hold": 0},
+            {"rate": 150, "temp": 800, "hold": 0},
+            {"rate": 120, "temp": 1050, "hold": 15},
         ]),
-        "sort_order": 4,
-    },
-    {
-        "name": "高温还原 1300℃",
-        "type": "还原",
-        "target_temp": "1300℃",
-        "description": "△11-12 高温还原，适合高温瓷器和特殊还原釉",
-        "segments": json.dumps([
-            {"rate": 80, "temp": 600, "hold": 0},
-            {"rate": 100, "temp": 900, "hold": 0},
-            {"rate": 70, "temp": 1300, "hold": 30},
-        ]),
-        "sort_order": 5,
-    },
-    {
-        "name": "乐烧 1000℃ 快速",
-        "type": "氧化",
-        "target_temp": "1000℃",
-        "description": "乐烧专用快速升温，达到温度后直接取出",
-        "segments": json.dumps([
-            {"rate": 200, "temp": 600, "hold": 0},
-            {"rate": 300, "temp": 1000, "hold": 0},
-        ]),
-        "sort_order": 6,
+        "sort_order": 1,
     },
 ]
 
 
-@router.get("/init")
-def init_default_curves(db: Session = Depends(get_db)):
-    """初始化预置烧制曲线"""
-    count = db.query(FiringCurve).count()
-    if count > 0:
-        return {"message": f"已有 {count} 条曲线，跳过初始化"}
-    for c in DEFAULT_CURVES:
+def create_default_user_curves(db: Session, user_id: int):
+    """为新用户添加默认烧制曲线"""
+    for c in DEFAULT_USER_CURVES:
         curve = FiringCurve(
+            user_id=user_id,
             name=c["name"],
             type=c["type"],
             target_temp=c["target_temp"],
-            segments=json.dumps(c["segments"]) if isinstance(c["segments"], list) else c["segments"],
+            segments=c["segments"],
             description=c["description"],
             sort_order=c["sort_order"],
         )
         db.add(curve)
     db.commit()
-    return {"message": f"已初始化 {len(DEFAULT_CURVES)} 条默认烧制曲线"}
 
 
 @router.get("")
 @router.get("/")
-def list_curves(db: Session = Depends(get_db)):
-    curves = db.query(FiringCurve).order_by(FiringCurve.sort_order).all()
+def list_curves(user_id: int = Query(...), db: Session = Depends(get_db)):
+    """获取某用户的个人烧制曲线"""
+    curves = (
+        db.query(FiringCurve)
+        .filter(FiringCurve.user_id == user_id)
+        .order_by(FiringCurve.sort_order, FiringCurve.id)
+        .all()
+    )
     return curves
 
 
 @router.get("/{curve_id}")
-def get_curve(curve_id: int, db: Session = Depends(get_db)):
-    curve = db.query(FiringCurve).filter(FiringCurve.id == curve_id).first()
+def get_curve(curve_id: int, user_id: int = Query(...), db: Session = Depends(get_db)):
+    curve = db.query(FiringCurve).filter(
+        FiringCurve.id == curve_id,
+        FiringCurve.user_id == user_id,
+    ).first()
     if not curve:
         raise HTTPException(status_code=404, detail="曲线不存在")
     return curve
@@ -139,8 +98,9 @@ def get_curve(curve_id: int, db: Session = Depends(get_db)):
 
 @router.post("")
 @router.post("/")
-def create_curve(data: CurveCreate, db: Session = Depends(get_db)):
+def create_curve(data: CurveCreate, user_id: int = Query(...), db: Session = Depends(get_db)):
     curve = FiringCurve(
+        user_id=user_id,
         name=data.name,
         type=data.type,
         target_temp=data.target_temp,
@@ -155,10 +115,13 @@ def create_curve(data: CurveCreate, db: Session = Depends(get_db)):
 
 
 @router.put("/{curve_id}")
-def update_curve(curve_id: int, data: CurveUpdate, db: Session = Depends(get_db)):
-    curve = db.query(FiringCurve).filter(FiringCurve.id == curve_id).first()
+def update_curve(curve_id: int, data: CurveUpdate, user_id: int = Query(...), db: Session = Depends(get_db)):
+    curve = db.query(FiringCurve).filter(
+        FiringCurve.id == curve_id,
+        FiringCurve.user_id == user_id,
+    ).first()
     if not curve:
-        raise HTTPException(status_code=404, detail="曲线不存在")
+        raise HTTPException(status_code=404, detail="曲线不存在或无权修改")
     update_data = data.model_dump(exclude_unset=True)
     for key, value in update_data.items():
         setattr(curve, key, value)
@@ -167,11 +130,35 @@ def update_curve(curve_id: int, data: CurveUpdate, db: Session = Depends(get_db)
     return curve
 
 
+@router.post("/{curve_id}/copy")
+def copy_curve(curve_id: int, user_id: int = Query(...), db: Session = Depends(get_db)):
+    """复制一条曲线到当前用户（来源可以是系统默认或用户自己的）"""
+    original = db.query(FiringCurve).filter(FiringCurve.id == curve_id).first()
+    if not original:
+        raise HTTPException(status_code=404, detail="原曲线不存在")
+    new_curve = FiringCurve(
+        user_id=user_id,
+        name=original.name + " (副本)",
+        type=original.type,
+        target_temp=original.target_temp,
+        segments=original.segments,
+        description=original.description,
+        sort_order=original.sort_order,
+    )
+    db.add(new_curve)
+    db.commit()
+    db.refresh(new_curve)
+    return new_curve
+
+
 @router.delete("/{curve_id}")
-def delete_curve(curve_id: int, db: Session = Depends(get_db)):
-    curve = db.query(FiringCurve).filter(FiringCurve.id == curve_id).first()
+def delete_curve(curve_id: int, user_id: int = Query(...), db: Session = Depends(get_db)):
+    curve = db.query(FiringCurve).filter(
+        FiringCurve.id == curve_id,
+        FiringCurve.user_id == user_id,
+    ).first()
     if not curve:
-        raise HTTPException(status_code=404, detail="曲线不存在")
+        raise HTTPException(status_code=404, detail="曲线不存在或无权删除")
     db.delete(curve)
     db.commit()
     return {"message": "已删除"}

@@ -62,6 +62,28 @@ def list_glazy_materials(
     }
 
 
+@router.get("/detail/{material_id}")
+def get_material_by_id(material_id: int, db: Session = Depends(get_db)):
+    """根据 materials 表主键 ID 获取材料详情"""
+    m = db.query(Material).filter(Material.id == material_id).first()
+    if not m:
+        raise HTTPException(status_code=404, detail="材料不存在")
+    result = {
+        "id": m.id,
+        "name": m.name,
+        "name_en": m.name_en,
+        "source": m.source,
+        "formula": m.formula,
+        "molecular_weight": m.molecular_weight,
+        "is_primitive": bool(m.is_primitive),
+    }
+    for oxide in ["sio2","al2o3","fe2o3","tio2","cao","mgo","na2o","k2o","zno","b2o3","p2o5","li2o","mno2","coo","sno2","cuo","cr2o3","pbo","bao","sro","loi","thermal_expansion"]:
+        val = getattr(m, oxide, None)
+        if val is not None:
+            result[oxide] = val
+    return result
+
+
 @router.get("/{glazy_id}")
 def get_glazy_material(glazy_id: int, db: Session = Depends(get_db)):
     """获取单个材料详情"""

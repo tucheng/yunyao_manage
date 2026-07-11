@@ -43,6 +43,50 @@ from routes import (
 
 app = FastAPI(title="Yunyao App API", version="0.2.0")
 
+
+@app.on_event("startup")
+def startup_downgrade():
+    """启动时执行过期降级 + 每晚0点定时降级"""
+    from database import SessionLocal
+    from level_check import downgrade_expired_users
+
+    # 启动时执行一次
+    try:
+        db = SessionLocal()
+        count = downgrade_expired_users(db)
+        db.close()
+        if count:
+            logger.info(f"[过期降级] 启动时降级 {count} 个用户")
+    except Exception as e:
+        logger.error(f"[过期降级] 启动时执行失败: {e}")
+
+    # 每晚 0 点执行
+    import threading
+
+    def _nightly_check():
+        while True:
+            now = time.localtime()
+            tomorrow = time.struct_time((
+                now.tm_year, now.tm_mon, now.tm_mday + 1,
+                0, 0, 0, now.tm_wday, now.tm_yday, now.tm_isdst
+            ))
+            sleep_sec = time.mktime(tomorrow) - time.mktime(now)
+            if sleep_sec < 0:
+                sleep_sec += 86400
+            time.sleep(sleep_sec)
+            try:
+                db = SessionLocal()
+                count = downgrade_expired_users(db)
+                db.close()
+                logger.info(f"[过期降级] 定时降级 {count} 个用户")
+            except Exception as e:
+                logger.error(f"[过期降级] 定时执行失败: {e}")
+
+    t = threading.Thread(target=_nightly_check, daemon=True)
+    t.start()
+    logger.info("[过期降级] 定时任务已启动，每晚 0:00 执行")
+
+
 # ===== 日志配置 =====
 LOG_FILE = os.path.join(os.path.dirname(__file__), "logs", "server.log")
 logging.basicConfig(
@@ -119,9 +163,12 @@ def _requires_auth(path: str, method: str) -> bool:
         return False
     if path.startswith(("/admin", "/admin-panel", "/docs", "/openapi.json", "/uploads")):
         return False
-    if path in ("/users/publish-status",):
+    if path in ("/users/publish-status", "/users/view-status"):
         return False
-    if path.startswith(("/wallet", "/materials", "/settings", "/users", "/social", "/notifications", "/complaints", "/upload")):
+    if path.startswith(('/wallet', '/materials', '/settings', '/users', '/social', '/notifications', '/complaints', '/upload', '/curves')):
+        # curves: GET 查询公开
+        if path.startswith('/curves') and method == 'GET':
+            return False
         # materials: GET 列表公开（POST/PUT/DELETE 需登录）
         if path.startswith("/materials/body") and method == "GET":
             return False

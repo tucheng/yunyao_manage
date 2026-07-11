@@ -18,6 +18,7 @@ from auth_utils import auth_payload, hash_password, verify_password, token_from_
 from database import get_db
 from encryption_utils import encrypt, hash_for_lookup
 from models import User
+from routes.curves import create_default_user_curves
 from verification_sender import get_settings as get_verification_settings, send_verification_code
 from datetime import datetime, timedelta
 
@@ -95,7 +96,7 @@ def _verify_code(target_key: str, code: str, consume: bool = True) -> None:
 
 def _login_response(user: User, db: Session | None = None, password: str | None = None, upgrade_hash: bool = False):
     if db is not None and password and upgrade_hash:
-        user.password_hash = hash_password(password)
+        user.password = hash_password(password)
         db.commit()
         db.refresh(user)
     return auth_payload(user)
@@ -264,15 +265,16 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         phone=enc_phone,
         email_hash=hash_for_lookup(email) if email else None,
         phone_hash=hash_for_lookup(phone) if phone else None,
-        password_hash=hash_password(password),
+        password=hash_password(password),
         username=username,
         nickname=username,
         balance=10000,
-        expires_at=datetime.now() + timedelta(days=2),
+        expires_at=datetime.now() + timedelta(days=7),
     )
     db.add(user)
     db.commit()
     db.refresh(user)
+    create_default_user_curves(db, user.id)
     return auth_payload(user)
 
 
@@ -299,14 +301,14 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
 
     if email and password:
         user = User.by_email(db, email)
-        ok, upgrade_hash = verify_password(password, user.password_hash if user else "")
+        ok, upgrade_hash = verify_password(password, user.password if user else "")
         if not user or not ok:
             raise HTTPException(status_code=401, detail="邮箱或密码错误")
         return _login_response(user, db, password, upgrade_hash)
 
     if phone and password:
         user = User.by_phone(db, phone)
-        ok, upgrade_hash = verify_password(password, user.password_hash if user else "")
+        ok, upgrade_hash = verify_password(password, user.password if user else "")
         if not user or not ok:
             raise HTTPException(status_code=401, detail="手机号或密码错误")
         return _login_response(user, db, password, upgrade_hash)
@@ -316,7 +318,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         user = db.query(User).filter(User.username == uname).first()
         if not user:
             user = User.by_email_or_phone(db, uname)
-        ok, upgrade_hash = verify_password(password, user.password_hash if user else "")
+        ok, upgrade_hash = verify_password(password, user.password if user else "")
         if not user or not ok:
             raise HTTPException(status_code=401, detail="用户名或密码错误")
         return _login_response(user, db, password, upgrade_hash)
@@ -324,10 +326,11 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     if code and ENABLE_MOCK_LOGIN and not WX_APPID:
         user = db.query(User).filter(User.openid == code).first()
         if not user:
-            user = User(openid=code, nickname=_default_nickname(db), balance=10000, expires_at=datetime.now() + timedelta(days=2))
+            user = User(openid=code, nickname=_default_nickname(db), balance=10000, expires_at=datetime.now() + timedelta(days=7))
             db.add(user)
             db.commit()
             db.refresh(user)
+            create_default_user_curves(db, user.id)
         return auth_payload(user)
 
     if code:
@@ -348,10 +351,11 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="登录失败")
         user = db.query(User).filter(User.openid == data["openid"]).first()
         if not user:
-            user = User(openid=data["openid"], balance=0, expires_at=datetime.now() + timedelta(days=2))
+            user = User(openid=data["openid"], balance=0, expires_at=datetime.now() + timedelta(days=7))
             db.add(user)
             db.commit()
             db.refresh(user)
+            create_default_user_curves(db, user.id)
         return auth_payload(user)
 
     raise HTTPException(status_code=400, detail="请提供登录方式")
@@ -391,7 +395,7 @@ def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
 
     _verify_code(f"email:{email}", body.verification_code)
 
-    user.password_hash = hash_password(body.password)
+    user.password = hash_password(body.password)
     db.commit()
     return {"message": "密码重置成功"}
 

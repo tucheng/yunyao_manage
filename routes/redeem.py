@@ -149,6 +149,8 @@ def redeem_code(body: RedeemBody, request: Request, db: Session = Depends(get_db
     old_expires = user.expires_at
     new_expires = max(old_expires, datetime.now()) + timedelta(days=rc.days) if old_expires else datetime.now() + timedelta(days=rc.days)
     user.expires_at = new_expires
+    # 恢复等级（到期自动降级后再兑换可恢复）
+    user.level_id = 1
 
     # 记录
     rc.current_uses += 1

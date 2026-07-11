@@ -240,6 +240,43 @@ def get_publish_status(user_id: Optional[int] = Query(None), db: Session = Depen
     }
 
 
+# ========= 配方查看权限 =========
+
+
+@router.get("/view-status")
+def get_view_status(user_id: int = Query(...), db: Session = Depends(get_db)):
+    """检查用户今日配方查看状态"""
+    from datetime import datetime, time
+    from models import RecipeView, UserLevel
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        return {"can_view": False, "reason": "用户不存在"}
+
+    level = db.query(UserLevel).filter(UserLevel.id == (user.level_id or 1)).first()
+    max_views = level.max_views if level else 0
+
+    if max_views is None or max_views <= 0:
+        return {"can_view": False, "today_views": 0, "max_views": max_views or 0, "remaining": 0,
+                "reason": "当前等级不允许查看配方"}
+
+    today_start = datetime.combine(datetime.now().date(), time.min)
+    today_views = db.query(func.count(RecipeView.id)).filter(
+        RecipeView.user_id == user_id,
+        RecipeView.created_at >= today_start,
+    ).scalar() or 0
+
+    can_view = today_views < max_views
+    remaining = max_views - today_views
+    return {
+        "can_view": can_view,
+        "today_views": today_views,
+        "max_views": max_views,
+        "remaining": max(0, remaining),
+        "reason": f"今日查看配方已达上限（{max_views}个），明天再来看吧" if not can_view else "",
+    }
+
+
 # ========= 待烧（ToBeFired） =========
 
 

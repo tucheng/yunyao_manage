@@ -2,6 +2,22 @@ from sqlalchemy.orm import Session
 from fastapi import HTTPException
 from models import User, UserLevel, Recipe, Work
 from sqlalchemy import func
+from datetime import datetime
+
+TRIAL_LEVEL_ID = 5  # 试用者
+
+
+def downgrade_expired_users(db: Session) -> int:
+    """检查所有过期用户，降级为试用者，返回降级人数"""
+    expired = db.query(User).filter(
+        User.expires_at.isnot(None),
+        User.expires_at < datetime.now(),
+        User.level_id != TRIAL_LEVEL_ID,
+    ).all()
+    for u in expired:
+        u.level_id = TRIAL_LEVEL_ID
+    db.commit()
+    return len(expired)
 
 
 def check_publish_limits(db: Session, user_id: int, recipe_price: int = 0, is_work: bool = False):
