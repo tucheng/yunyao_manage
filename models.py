@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, DateTime, ForeignKey, Boolean, text
+from sqlalchemy import Column, Integer, String, Text, Float, Date, DateTime, ForeignKey, Boolean, UniqueConstraint, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -434,13 +434,41 @@ class UserLevel(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(50), nullable=False)
-    can_publish_paid = Column(Boolean, default=False)
     max_paid_recipes = Column(Integer, default=0)
     max_free_recipes = Column(Integer, default=10)
     max_works = Column(Integer, default=50)
-    max_views = Column(Integer, default=0, comment="每日可查看配方上限，0=不限")
+    max_views = Column(Integer, default=0, comment="每日可查看配方上限，0=禁止查看")
     description = Column(String(200), default="")
     sort_order = Column(Integer, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class UserUsageQuota(Base):
+    """用户当日功能剩余额度及累计兑换次数。"""
+    __tablename__ = "user_usage_quotas"
+
+    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    quota_date = Column(Date, nullable=False, index=True)
+    paid_recipe_remaining = Column(Integer, nullable=False, default=0)
+    free_recipe_remaining = Column(Integer, nullable=False, default=0)
+    work_remaining = Column(Integer, nullable=False, default=0)
+    recipe_view_remaining = Column(Integer, nullable=False, default=0)
+    redeem_count = Column(Integer, nullable=False, default=0)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
+
+
+class UserDailyRecipeView(Base):
+    """同一用户同一配方同一天仅消耗一次查看额度。"""
+    __tablename__ = "user_daily_recipe_views"
+    __table_args__ = (
+        UniqueConstraint("user_id", "recipe_id", "view_date", name="uq_user_recipe_view_date"),
+    )
+
+    id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, index=True)
+    view_date = Column(Date, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

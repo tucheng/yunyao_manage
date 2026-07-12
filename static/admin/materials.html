@@ -1,0 +1,26 @@
+<div class="card">
+  <h2>材料搜索</h2>
+  <div class="search-bar">
+    <input type="text" id="materialSearch" placeholder="搜索材料名称、英文名、分子式..." onkeydown="if(event.key==='Enter')window.loadMaterials()">
+    <button class="btn btn-primary" onclick="window.loadMaterials()">🔍 搜索</button>
+  </div>
+</div>
+
+<div class="card">
+  <div class="config-toolbar">
+    <h2 style="margin:0">材料列表</h2>
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>名称</th>
+        <th>分子式</th>
+        <th>来源</th>
+        <th>操作</th>
+      </tr>
+    </thead>
+    <tbody id="materialTableBody"></tbody>
+  </table>
+  <div class="pagination" id="materialPagination"></div>
+</div>

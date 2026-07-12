@@ -1,0 +1,46 @@
+<div class="card">
+  <h2>批量生成兑换码</h2>
+  <div class="form-row">
+    <div class="form-group" style="flex:1">
+      <label for="redeemCount">生成数量</label>
+      <input type="number" id="redeemCount" value="10" min="1" max="1000">
+    </div>
+    <div class="form-group" style="flex:1">
+      <label for="redeemDays">可兑换天数</label>
+      <input type="number" id="redeemDays" value="30" min="1">
+    </div>
+    <div class="form-group" style="flex:1">
+      <label for="redeemMaxUses">每个码可用次数</label>
+      <input type="number" id="redeemMaxUses" value="1" min="1">
+    </div>
+  </div>
+  <div style="display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+    <button class="btn btn-primary" onclick="window.generateCodes()">🚀 批量生成</button>
+    <span id="generateResult" style="font-size:14px;color:#888"></span>
+  </div>
+</div>
+
+<div class="card">
+  <div class="config-toolbar">
+    <h2 style="margin:0">兑换码列表</h2>
+    <button class="btn" onclick="window.loadRedeemCodes(window.redeemPage)">🔄 刷新</button>
+  </div>
+  <div id="redeemStats" style="margin-bottom:10px;font-size:14px;color:#555"></div>
+  <table>
+    <thead>
+      <tr>
+        <th>ID</th>
+        <th>兑换码</th>
+        <th>天数</th>
+        <th>已用/可用</th>
+        <th>使用人</th>
+        <th>兑换前</th>
+        <th>兑换后</th>
+        <th>状态</th>
+        <th>创建时间</th>
+      </tr>
+    </thead>
+    <tbody id="redeemTableBody"></tbody>
+  </table>
+  <div class="pagination" id="redeemPagination"></div>
+</div>

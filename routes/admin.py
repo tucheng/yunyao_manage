@@ -13,6 +13,7 @@ from encryption_utils import decrypt
 from verification_sender import get_settings as get_verification_settings, save_settings as save_verification_settings
 from color_names import get_color_range_config
 from routes.works import TEMPERATURE_RANGE_CONFIG
+from services.user_quota import SYSTEM_LEVEL_NAMES, reset_user_quota
 
 router = APIRouter(prefix="/admin", tags=["后台管理"])
 
@@ -177,6 +178,7 @@ def update_user(user_id: int, body: UpdateUserBody, token: str = Query(...), db:
         if not level:
             raise HTTPException(status_code=400, detail="等级不存在")
         u.level_id = body.level_id
+        reset_user_quota(db, u)
 
     if body.is_muted is not None:
         u.is_muted = body.is_muted
@@ -205,7 +207,6 @@ def list_levels(token: str = Query(...), db: Session = Depends(get_db)):
         {
             "id": l.id,
             "name": l.name,
-            "can_publish_paid": bool(l.can_publish_paid),
             "max_paid_recipes": l.max_paid_recipes,
             "max_free_recipes": l.max_free_recipes,
             "max_works": l.max_works,
@@ -220,13 +221,17 @@ def list_levels(token: str = Query(...), db: Session = Depends(get_db)):
 
 class LevelBody(BaseModel):
     name: str
-    can_publish_paid: bool = False
     max_paid_recipes: int = 0
     max_free_recipes: int = 10
     max_works: int = 50
     max_views: int = 0
     description: str = ""
     sort_order: int = 0
+
+    def validate_quotas(self):
+        values = (self.max_paid_recipes, self.max_free_recipes, self.max_works, self.max_views)
+        if any(value < 0 for value in values):
+            raise HTTPException(status_code=400, detail="每日额度不能小于0")
 
 
 class VerificationSettingsBody(BaseModel):
@@ -297,6 +302,7 @@ def _ensure_json_setting(db: Session, key: str, default):
 @router.post("/levels")
 def create_level(body: LevelBody, token: str = Query(...), db: Session = Depends(get_db)):
     verify_admin(token)
+    body.validate_quotas()
     level = UserLevel(**body.model_dump())
     db.add(level)
     db.commit()
@@ -307,10 +313,14 @@ def create_level(body: LevelBody, token: str = Query(...), db: Session = Depends
 @router.put("/levels/{level_id}")
 def update_level(level_id: int, body: LevelBody, token: str = Query(...), db: Session = Depends(get_db)):
     verify_admin(token)
+    body.validate_quotas()
     l = db.query(UserLevel).filter(UserLevel.id == level_id).first()
     if not l:
         raise HTTPException(status_code=404, detail="等级不存在")
-    for k, v in body.model_dump().items():
+    values = body.model_dump()
+    if level_id in SYSTEM_LEVEL_NAMES:
+        values["name"] = SYSTEM_LEVEL_NAMES[level_id]
+    for k, v in values.items():
         setattr(l, k, v)
     db.commit()
     return {"ok": True}
@@ -319,7 +329,7 @@ def update_level(level_id: int, body: LevelBody, token: str = Query(...), db: Se
 @router.delete("/levels/{level_id}")
 def delete_level(level_id: int, token: str = Query(...), db: Session = Depends(get_db)):
     verify_admin(token)
-    if level_id <= 4:
+    if level_id in SYSTEM_LEVEL_NAMES:
         raise HTTPException(status_code=400, detail="默认等级不可删除")
     count = db.query(User).filter(User.level_id == level_id).count()
     if count > 0:

@@ -1,0 +1,39 @@
+<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+  <h2>用户等级配置</h2>
+  <button class="btn btn-primary" onclick="window.showLevelModal()">+ 新建等级</button>
+</div>
+<table>
+  <thead><tr>
+    <th>ID</th><th>等级名称</th><th>每日付费配方</th><th>每日免费配方</th><th>每日作品</th><th>每日查看配方</th><th>用户数</th><th>操作</th>
+  </tr></thead>
+  <tbody id="levelTableBody"></tbody>
+</table>
+
+<div class="modal" id="levelModal">
+  <div class="modal-content">
+    <h3 id="levelModalTitle">编辑等级</h3>
+    <div class="form-group">
+      <label>等级名称</label><input id="levelEditName"><div class="help">ID 1、2、3 为固定系统等级，名称不可修改</div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>每日发布付费配方次数</label><input type="number" min="0" id="levelEditMaxPaid"></div>
+      <div class="form-group"><label>每日发布免费配方次数</label><input type="number" min="0" id="levelEditMaxFree"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>每日发布作品次数</label><input type="number" min="0" id="levelEditMaxWorks"></div>
+      <div class="form-group"><label>每日查看配方数</label><input type="number" min="0" id="levelEditMaxViews" placeholder="0=不可使用"></div>
+    </div>
+    <div class="form-row">
+      <div class="form-group"><label>排序 <span class="tip">ⓘ</span></label><input type="number" id="levelEditSort"></div>
+      <div class="form-group"></div>
+    </div>
+    <div class="form-group"><label>描述</label><textarea id="levelEditDesc" rows="2"></textarea></div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:space-between">
+      <button class="btn btn-danger btn-sm" id="levelDeleteBtn" onclick="window.deleteLevel()">删除此等级</button>
+      <div style="display:flex;gap:8px">
+        <button class="btn" onclick="closeModal('levelModal')">取消</button>
+        <button class="btn btn-primary" onclick="window.saveLevel()">保存</button>
+      </div>
+    </div>
+  </div>
+</div>

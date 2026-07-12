@@ -1,0 +1,23 @@
+<div class="color-config-page">
+    <div class="card">
+        <div class="config-toolbar">
+            <h2>🎨 颜色范围配置</h2>
+            <button onclick="window.addColorRangeRow()" class="btn btn-primary">+ 添加行</button>
+        </div>
+        <table class="config-table">
+            <thead>
+                <tr>
+                    <th style="width:100px">编码 (value)</th>
+                    <th style="width:120px">名称 (label)</th>
+                    <th>包含颜色名 (逗号分隔)</th>
+                    <th>说明 (description)</th>
+                    <th style="width:70px">操作</th>
+                </tr>
+            </thead>
+            <tbody id="colorTableBody"></tbody>
+        </table>
+        <div style="margin-top:16px;text-align:right">
+            <button onclick="window.saveColorSettings()" class="btn btn-primary">💾 保存配置</button>
+        </div>
+    </div>
+</div>

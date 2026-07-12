@@ -13,6 +13,16 @@ import json
 PAID_ENABLED_KEY = "paid_enabled"
 
 
+def _safe_decrypt(val):
+    """安全解密，遇到未加密的明文直接返回原值"""
+    if not val:
+        return ""
+    try:
+        return decrypt(val)
+    except Exception:
+        return val
+
+
 def _get_paid_enabled(db: Session) -> bool:
     row = db.query(AppSetting).filter(AppSetting.key == PAID_ENABLED_KEY).first()
     if not row or not row.value:
@@ -70,7 +80,7 @@ def get_profile(user_id: int = Query(...), db: Session = Depends(get_db)):
         "location": user.location or "",
         "level_id": user.level_id or 1,
         "level_name": level.name if level else "普通用户",
-        "can_publish_paid": level.can_publish_paid if level else False,
+        "can_publish_paid": (level.max_paid_recipes > 0) if level else False,
         "paid_enabled": _get_paid_enabled(db),
         "following_count": following_count,
         "follower_count": follower_count,
@@ -102,14 +112,15 @@ def get_my_profile(request: Request, db: Session = Depends(get_db)):
         "gender": user.gender or "",
         "birthday": user.birthday or "",
         "location": user.location or "",
-        "phone": decrypt(user.phone or "") or "",
-        "email": decrypt(user.email or "") or "",
+        "phone": _safe_decrypt(user.phone),
+        "email": _safe_decrypt(user.email),
         "balance": user.balance or 0,
         "level_id": user.level_id or 1,
         "level_name": level.name if level else "普通用户",
-        "can_publish_paid": level.can_publish_paid if level else False,
+        "can_publish_paid": (level.max_paid_recipes > 0) if level else False,
         "paid_enabled": _get_paid_enabled(db),
         "created_at": user.created_at,
+        "expires_at": str(user.expires_at) if user.expires_at else "",
     }
 
 
@@ -180,8 +191,8 @@ def update_profile(
         "gender": user.gender or "",
         "birthday": user.birthday or "",
         "location": user.location or "",
-        "phone": decrypt(user.phone or "") or "",
-        "email": decrypt(user.email or "") or "",
+        "phone": _safe_decrypt(user.phone),
+        "email": _safe_decrypt(user.email),
     }
 
 
@@ -194,25 +205,18 @@ def get_publish_status(user_id: Optional[int] = Query(None), db: Session = Depen
     from datetime import datetime
 
     level = None
-    recipe_count = 0
-    free_count = 0
-    work_count = 0
+    quota = None
     is_guest = False
 
     if user_id:
         user = db.query(User).filter(User.id == user_id).first()
         if not user:
             return {"ok": False, "reason": "用户不存在"}
-        level = db.query(UserLevel).filter(UserLevel.id == (user.level_id or 1)).first()
         if user.is_muted:
             return {"ok": False, "reason": "你已被禁言，无法发布内容"}
-        if user.expires_at and datetime.now() > user.expires_at:
-            return {"ok": False, "reason": "账号已过期，无法发布内容"}
-        recipe_count = db.query(func.count(Recipe.id)).filter(Recipe.user_id == user_id).scalar() or 0
-        free_count = db.query(func.count(Recipe.id)).filter(
-            Recipe.user_id == user_id, Recipe.price == 0
-        ).scalar() or 0
-        work_count = db.query(func.count(Work.id)).filter(Work.user_id == user_id).scalar() or 0
+        from services.user_quota import get_or_create_quota
+        quota, level = get_or_create_quota(db, user)
+        db.commit()
     else:
         is_guest = True
         level = db.query(UserLevel).filter(UserLevel.id == 1).first()
@@ -220,22 +224,22 @@ def get_publish_status(user_id: Optional[int] = Query(None), db: Session = Depen
     if not level:
         return {"ok": False, "reason": "用户等级异常"}
 
-    can_publish_recipe = free_count < level.max_free_recipes if level.max_free_recipes > 0 else True
-    recipe_remaining = max(0, level.max_free_recipes - free_count) if level.max_free_recipes > 0 else -1
-
-    can_publish_work = work_count < level.max_works if level.max_works > 0 else True
-    work_remaining = max(0, level.max_works - work_count) if level.max_works > 0 else -1
+    recipe_remaining = quota.free_recipe_remaining if quota else max(0, level.max_free_recipes or 0)
+    paid_recipe_remaining = quota.paid_recipe_remaining if quota else max(0, level.max_paid_recipes or 0)
+    work_remaining = quota.work_remaining if quota else max(0, level.max_works or 0)
 
     return {
         "ok": True,
-        "can_publish_recipe": can_publish_recipe,
-        "can_publish_work": can_publish_work,
+        "can_publish_recipe": recipe_remaining > 0,
+        "can_publish_paid_recipe": paid_recipe_remaining > 0,
+        "can_publish_work": work_remaining > 0,
         "recipe_remaining": recipe_remaining,
+        "paid_recipe_remaining": paid_recipe_remaining,
         "work_remaining": work_remaining,
         "recipe_limit": level.max_free_recipes,
-        "recipe_count": recipe_count,
+        "recipe_count": (level.max_free_recipes or 0) - recipe_remaining,
         "work_limit": level.max_works,
-        "work_count": work_count,
+        "work_count": (level.max_works or 0) - work_remaining,
         "is_guest": is_guest,
     }
 
@@ -253,21 +257,13 @@ def get_view_status(user_id: int = Query(...), db: Session = Depends(get_db)):
     if not user:
         return {"can_view": False, "reason": "用户不存在"}
 
-    level = db.query(UserLevel).filter(UserLevel.id == (user.level_id or 1)).first()
-    max_views = level.max_views if level else 0
-
-    if max_views is None or max_views <= 0:
-        return {"can_view": False, "today_views": 0, "max_views": max_views or 0, "remaining": 0,
-                "reason": "当前等级不允许查看配方"}
-
-    today_start = datetime.combine(datetime.now().date(), time.min)
-    today_views = db.query(func.count(RecipeView.id)).filter(
-        RecipeView.user_id == user_id,
-        RecipeView.created_at >= today_start,
-    ).scalar() or 0
-
-    can_view = today_views < max_views
-    remaining = max_views - today_views
+    from services.user_quota import get_or_create_quota
+    quota, level = get_or_create_quota(db, user)
+    db.commit()
+    max_views = max(0, level.max_views or 0)
+    remaining = quota.recipe_view_remaining
+    today_views = max_views - remaining
+    can_view = remaining > 0
     return {
         "can_view": can_view,
         "today_views": today_views,

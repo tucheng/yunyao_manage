@@ -269,7 +269,8 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         username=username,
         nickname=username,
         balance=10000,
-        expires_at=datetime.now() + timedelta(days=7),
+        level_id=1,
+        expires_at=datetime.now() + timedelta(days=3),
     )
     db.add(user)
     db.commit()
@@ -326,7 +327,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     if code and ENABLE_MOCK_LOGIN and not WX_APPID:
         user = db.query(User).filter(User.openid == code).first()
         if not user:
-            user = User(openid=code, nickname=_default_nickname(db), balance=10000, expires_at=datetime.now() + timedelta(days=7))
+            user = User(openid=code, nickname=_default_nickname(db), balance=10000, level_id=1, expires_at=datetime.now() + timedelta(days=3))
             db.add(user)
             db.commit()
             db.refresh(user)
@@ -351,7 +352,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
             raise HTTPException(status_code=400, detail="登录失败")
         user = db.query(User).filter(User.openid == data["openid"]).first()
         if not user:
-            user = User(openid=data["openid"], balance=0, expires_at=datetime.now() + timedelta(days=7))
+            user = User(openid=data["openid"], balance=0, level_id=1, expires_at=datetime.now() + timedelta(days=3))
             db.add(user)
             db.commit()
             db.refresh(user)

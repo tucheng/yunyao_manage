@@ -184,9 +184,7 @@ def _serialize_recipe_list_item(recipe, nickname, avatar, work_count=0, work_ima
 
 @router.get("/search/config")
 def recipe_search_config(db: Session = Depends(get_db)):
-    from models import WorkAttributeOption
-
-    # fallback 选项（跟作品搜索一致）
+    # fallback 选项
     _KILN_OPTIONS = ["电窑", "气窑", "柴窑", "乐烧"]
     _SURFACE_OPTIONS = ["亮光", "丝光", "蜡光", "柔光", "无光", "磨砂"]
     _TRANSPARENCY_OPTIONS = ["高透", "微透", "半透", "不透"]
@@ -195,15 +193,24 @@ def recipe_search_config(db: Session = Depends(get_db)):
     rows = db.query(IngredientName.name).order_by(IngredientName.name).all()
     material_names = [r[0] for r in rows]
 
-    # 筛选项 — 跟作品搜索保持一致，从 WorkAttributeOption 取预制数据
-    attr_options = db.query(WorkAttributeOption).order_by(WorkAttributeOption.category, WorkAttributeOption.sort_order).all()
-    kiln_types = [o.value for o in attr_options if o.category == 'kiln_type']
-    surfaces = [o.value for o in attr_options if o.category == 'surface']
-    transparencies = [o.value for o in attr_options if o.category == 'transparency']
+    # 筛选项 — 从 Recipe 表取实际数据去重，确保能搜到结果
+    _VISIBLE = ["public", "paid", "showoff"]
+    kiln_types = [r[0] for r in db.query(Recipe.kiln_type).filter(
+        Recipe.kiln_type != "", Recipe.kiln_type.isnot(None),
+        Recipe.visibility.in_(_VISIBLE)
+    ).distinct().order_by(Recipe.kiln_type).all()]
+    surfaces = [r[0] for r in db.query(Recipe.surface).filter(
+        Recipe.surface != "", Recipe.surface.isnot(None),
+        Recipe.visibility.in_(_VISIBLE)
+    ).distinct().order_by(Recipe.surface).all()]
+    transparencies = [r[0] for r in db.query(Recipe.transparency).filter(
+        Recipe.transparency != "", Recipe.transparency.isnot(None),
+        Recipe.visibility.in_(_VISIBLE)
+    ).distinct().order_by(Recipe.transparency).all()]
 
-    # 温度和颜色 — 从 Recipe 表取实际值（无对应预制数据）
-    colors = [r[0] for r in db.query(Recipe.color).filter(Recipe.color != "", Recipe.color.isnot(None), Recipe.visibility.in_(["public", "paid", "showoff"])).distinct().order_by(Recipe.color).all()]
-    temperatures = [r[0] for r in db.query(Recipe.temperature).filter(Recipe.temperature != "", Recipe.temperature.isnot(None), Recipe.visibility.in_(["public", "paid", "showoff"])).distinct().order_by(Recipe.temperature).all()]
+    # 温度和颜色 — 从 Recipe 表取实际值
+    colors = [r[0] for r in db.query(Recipe.color).filter(Recipe.color != "", Recipe.color.isnot(None), Recipe.visibility.in_(_VISIBLE)).distinct().order_by(Recipe.color).all()]
+    temperatures = [r[0] for r in db.query(Recipe.temperature).filter(Recipe.temperature != "", Recipe.temperature.isnot(None), Recipe.visibility.in_(_VISIBLE)).distinct().order_by(Recipe.temperature).all()]
 
     return {
         "materials": material_names,
@@ -503,7 +510,14 @@ def toggle_recipe_like(recipe_id: int, user_id: int = Query(...), db: Session = 
 
 @router.post("/{recipe_id}/view")
 def record_recipe_view(recipe_id: int, user_id: int = Query(...), db: Session = Depends(get_db)):
-    """记录配方浏览（同一用户同一配方不重复记录）"""
+    """记录浏览；同一用户同一配方同一天只消耗一次额度。"""
+    from services.user_quota import consume_recipe_view_once
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    if not db.query(Recipe.id).filter(Recipe.id == recipe_id).first():
+        raise HTTPException(status_code=404, detail="配方不存在")
+    consumed, remaining = consume_recipe_view_once(db, user, recipe_id)
     existing = db.query(RecipeView).filter(
         RecipeView.recipe_id == recipe_id,
         RecipeView.user_id == user_id,
@@ -511,7 +525,8 @@ def record_recipe_view(recipe_id: int, user_id: int = Query(...), db: Session = 
     if not existing:
         db.add(RecipeView(recipe_id=recipe_id, user_id=user_id))
         db.commit()
-    return {"ok": True}
+    db.commit()
+    return {"ok": True, "quota_consumed": consumed, "remaining": remaining}
 
 
 @router.get("/favorites")
@@ -727,25 +742,16 @@ def get_recipe(
     if not current_user_id:
         raise HTTPException(status_code=401, detail="请先登录")
 
-    # 每日查看上限校验
-    user = db.query(User).filter(User.id == current_user_id).first()
-    if user:
-        level = db.query(UserLevel).filter(UserLevel.id == (user.level_id or 1)).first()
-        if level and level.max_views is not None:
-            today_start = datetime.utcnow().replace(hour=0, minute=0, second=0, microsecond=0)
-            today_views = db.query(func.count(RecipeView.id)).filter(
-                RecipeView.user_id == current_user_id,
-                RecipeView.created_at >= today_start,
-            ).scalar() or 0
-            if level.max_views <= 0 or today_views >= level.max_views:
-                raise HTTPException(
-                    status_code=403,
-                    detail=f"今日查看配方已达上限（{level.max_views}个），明天再来看吧"
-                )
-
     # 私密配方：只有作者可看
     if recipe.visibility == "private" and recipe.user_id != current_user_id:
         raise HTTPException(status_code=404, detail="不存在")
+
+    from services.user_quota import consume_recipe_view_once
+    user = db.query(User).filter(User.id == current_user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    consume_recipe_view_once(db, user, recipe_id)
+    db.commit()
 
     # 付费/显摆模式：隐藏原料和步骤
     recipe.is_purchased = False
@@ -1001,22 +1007,8 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    # 检查使用期限
-    if user.expires_at and datetime.now() > user.expires_at:
-        raise HTTPException(
-            status_code=403,
-            detail="账号使用期限已过，无法发布配方"
-        )
-
-    # 检查发布配方上限
-    level = db.query(UserLevel).filter(UserLevel.id == (user.level_id or 1)).first()
-    if level and level.max_free_recipes > 0:
-        recipe_count = db.query(func.count(Recipe.id)).filter(Recipe.user_id == user_id).scalar()
-        if recipe_count >= level.max_free_recipes:
-            raise HTTPException(
-                status_code=403,
-                detail=f"已达到发布上限（{level.max_free_recipes}个），无法继续发布"
-            )
+    from services.user_quota import consume_quota
+    consume_quota(db, user, "paid_recipe" if (recipe.price or 0) > 0 else "free_recipe")
 
     # 处理釉色数据
     glaze_colors_json = "[]"
@@ -1098,6 +1090,10 @@ def update_recipe(
     snapshot_recipe(recipe_id, db, note="编辑配方信息", user_id=user_id)
 
     update_data = recipe.model_dump(exclude_unset=True)
+    if (db_recipe.price or 0) <= 0 and (update_data.get("price") or 0) > 0:
+        from services.user_quota import consume_quota
+        user = db.query(User).filter(User.id == user_id).first()
+        consume_quota(db, user, "paid_recipe")
 
     # 处理釉色数据
     if "glaze_colors" in update_data and update_data["glaze_colors"]:

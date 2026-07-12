@@ -241,8 +241,10 @@ def get_work_search_config(db: Session = Depends(get_db)):
     kiln_types = [o.value for o in attr_options if o.category == 'kiln_type']
     surfaces = [o.value for o in attr_options if o.category == "surface"]
     transparencies = [o.value for o in attr_options if o.category == "transparency"]
+    types = [o.value for o in attr_options if o.category == "type"]
     return {
         "body_materials": body_materials,
+        "types": types,
         "kiln_types": kiln_types or KILN_TYPE_OPTIONS,
         "temperature_ranges": _get_temperature_ranges(db),
         "surfaces": surfaces or SURFACE_OPTIONS,
@@ -586,6 +588,12 @@ def create_work(
     
     if not user_id:
         raise HTTPException(status_code=400, detail="用户未登录")
+
+    user = db.query(User).filter(User.id == user_id).first()
+    if not user:
+        raise HTTPException(status_code=404, detail="用户不存在")
+    from services.user_quota import consume_quota
+    consume_quota(db, user, "work")
 
     # 处理多图
     images_raw = data.get("images") or []

@@ -46,17 +46,22 @@ app = FastAPI(title="Yunyao App API", version="0.2.0")
 
 @app.on_event("startup")
 def startup_downgrade():
-    """启动时执行过期降级 + 每晚0点定时降级"""
-    from database import SessionLocal
-    from level_check import downgrade_expired_users
+    """启动时补跑日切维护，并在每天 0 点刷新等级与额度。"""
+    from database import Base, SessionLocal, engine
+    from models import UserDailyRecipeView, UserUsageQuota
+    from services.user_quota import ensure_system_levels, run_daily_maintenance
+
+    # 仅创建本功能新增表；已有表结构仍由正式迁移管理。
+    UserUsageQuota.__table__.create(bind=engine, checkfirst=True)
+    UserDailyRecipeView.__table__.create(bind=engine, checkfirst=True)
 
     # 启动时执行一次
     try:
         db = SessionLocal()
-        count = downgrade_expired_users(db)
+        ensure_system_levels(db)
+        downgraded, refreshed = run_daily_maintenance(db)
         db.close()
-        if count:
-            logger.info(f"[过期降级] 启动时降级 {count} 个用户")
+        logger.info(f"[每日维护] 启动补跑完成：降级 {downgraded} 人，刷新额度 {refreshed} 人")
     except Exception as e:
         logger.error(f"[过期降级] 启动时执行失败: {e}")
 
@@ -76,15 +81,15 @@ def startup_downgrade():
             time.sleep(sleep_sec)
             try:
                 db = SessionLocal()
-                count = downgrade_expired_users(db)
+                downgraded, refreshed = run_daily_maintenance(db)
                 db.close()
-                logger.info(f"[过期降级] 定时降级 {count} 个用户")
+                logger.info(f"[每日维护] 降级 {downgraded} 人，刷新额度 {refreshed} 人")
             except Exception as e:
                 logger.error(f"[过期降级] 定时执行失败: {e}")
 
     t = threading.Thread(target=_nightly_check, daemon=True)
     t.start()
-    logger.info("[过期降级] 定时任务已启动，每晚 0:00 执行")
+    logger.info("[每日维护] 定时任务已启动，每晚 0:00 执行")
 
 
 # ===== 日志配置 =====

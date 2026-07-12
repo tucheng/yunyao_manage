@@ -5,6 +5,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from database import get_db
 from models import User, RedeemCode, RedeemLog
+from services.user_quota import MEMBER_LEVEL_ID, get_or_create_quota, reset_user_quota
 from pydantic import BaseModel
 from typing import Optional
 from datetime import datetime, timedelta
@@ -130,7 +131,7 @@ def redeem_code(body: RedeemBody, request: Request, db: Session = Depends(get_db
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
 
-    rc = db.query(RedeemCode).filter(RedeemCode.code == code_str).first()
+    rc = db.query(RedeemCode).filter(RedeemCode.code == code_str).with_for_update().first()
     if not rc:
         raise HTTPException(status_code=404, detail="兑换码不存在")
     if not rc.is_active:
@@ -146,17 +147,20 @@ def redeem_code(body: RedeemBody, request: Request, db: Session = Depends(get_db
         raise HTTPException(status_code=400, detail="该兑换码你已经用过了")
 
     # 累加使用期限
+    now = datetime.now()
     old_expires = user.expires_at
-    new_expires = max(old_expires, datetime.now()) + timedelta(days=rc.days) if old_expires else datetime.now() + timedelta(days=rc.days)
+    base_time = old_expires if old_expires and old_expires > now else now
+    new_expires = base_time + timedelta(days=rc.days)
     user.expires_at = new_expires
-    # 恢复等级（到期自动降级后再兑换可恢复）
-    user.level_id = 1
+    user.level_id = MEMBER_LEVEL_ID
 
     # 记录
     rc.current_uses += 1
     log = RedeemLog(code_id=rc.id, user_id=user_id, days_added=rc.days,
                     before_expiry=old_expires, after_expiry=new_expires)
     db.add(log)
+    quota = reset_user_quota(db, user)
+    quota.redeem_count = (quota.redeem_count or 0) + 1
     db.commit()
 
     return {

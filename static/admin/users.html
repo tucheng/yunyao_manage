@@ -1,0 +1,31 @@
+<div class="search-bar">
+  <input id="userSearch" placeholder="搜索用户昵称..." onkeydown="if(event.key==='Enter')window.loadUsers()">
+  <button class="btn btn-primary" onclick="window.loadUsers()">搜索</button>
+</div>
+<table>
+  <thead><tr>
+    <th>ID</th><th>昵称</th><th>用户名</th><th>等级</th><th>管理员</th><th>配方</th><th>付费</th><th>作品</th><th>状态</th><th>操作</th>
+  </tr></thead>
+  <tbody id="userTableBody"></tbody>
+</table>
+<div class="pagination" id="userPagination"></div>
+
+<div class="modal" id="userModal">
+  <div class="modal-content">
+    <h3 id="userModalTitle">编辑用户</h3>
+    <div class="form-group"><label>昵称</label><span id="userEditNickname" style="font-weight:600"></span></div>
+    <div class="form-group"><label>等级</label><select id="userEditLevel"></select></div>
+    <div class="form-group"><label>状态</label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:normal;margin-top:4px">
+        <input type="checkbox" id="userEditMuted"> 禁言中
+      </label>
+      <label style="display:flex;align-items:center;gap:8px;font-size:14px;font-weight:normal;margin-top:4px">
+        <input type="checkbox" id="userEditAdmin"> 管理员
+      </label>
+    </div>
+    <div style="display:flex;gap:8px;margin-top:16px;justify-content:flex-end">
+      <button class="btn" onclick="closeModal('userModal')">取消</button>
+      <button class="btn btn-primary" onclick="window.saveUser()">保存</button>
+    </div>
+  </div>
+</div>

@@ -1,0 +1,47 @@
+<div class="card">
+  <h2>验证码发送配置</h2>
+  <div class="form-group">
+    <label>注册/登录验证方式</label>
+    <select id="verificationAccountMode">
+      <option value="sms">仅短信验证（手机号）</option>
+      <option value="email">仅邮箱验证</option>
+      <option value="either">短信或邮箱二选一</option>
+    </select>
+    <div class="help">控制前台注册、验证码登录和获取验证码时允许填写哪类账号。</div>
+  </div>
+  <div class="form-group">
+    <label>启用渠道</label>
+    <select id="verificationChannel">
+      <option value="debug">开发调试（接口返回验证码）</option>
+      <option value="email">邮箱 SMTP</option>
+      <option value="sms">短信 HTTP 网关</option>
+    </select>
+  </div>
+</div>
+
+<div class="settings-grid">
+  <div class="card">
+    <h2>邮箱 SMTP</h2>
+    <div class="form-group"><label>SMTP Host</label><input id="smtpHost" placeholder="smtp.example.com"></div>
+    <div class="form-row">
+      <div class="form-group"><label>端口</label><input id="smtpPort" placeholder="465"></div>
+      <div class="form-group"><label>SSL</label><select id="smtpUseSsl"><option value="1">启用</option><option value="0">STARTTLS</option></select></div>
+    </div>
+    <div class="form-group"><label>账号</label><input id="smtpUsername" placeholder="notice@example.com"></div>
+    <div class="form-group"><label>密码/授权码</label><input id="smtpPassword" type="password" placeholder="留空表示不修改"></div>
+    <div class="form-group"><label>发件人</label><input id="smtpFrom" placeholder="notice@example.com"></div>
+    <div class="form-group"><label>邮件标题</label><input id="emailSubject"></div>
+    <div class="form-group"><label>邮件正文模板</label><textarea id="emailBodyTemplate" rows="3"></textarea><div class="help">可用变量：{{code}}、{{email}}</div></div>
+  </div>
+  <div class="card">
+    <h2>短信 HTTP 网关</h2>
+    <div class="form-group"><label>接口 URL</label><input id="smsApiUrl" placeholder="https://api.example.com/send"></div>
+    <div class="form-group"><label>请求方法</label><select id="smsMethod"><option value="POST">POST</option><option value="GET">GET</option></select></div>
+    <div class="form-group"><label>Headers JSON</label><textarea id="smsHeadersJson" rows="4"></textarea></div>
+    <div class="form-group"><label>Body 模板</label><textarea id="smsBodyTemplate" rows="5"></textarea><div class="help">可用变量：{{code}}、{{phone}}</div></div>
+  </div>
+</div>
+
+<div class="card">
+  <button class="btn btn-primary" onclick="window.saveVerificationSettings()">保存验证码配置</button>
+</div>

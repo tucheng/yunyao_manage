@@ -29,14 +29,7 @@ class RateLimiter:
 
     def _get_limit(self, group: str) -> tuple[int, int]:
         """返回 (max_requests, window_seconds)"""
-        limits = {
-            "auth":   (10, 60),    # 登录/注册/验证码：10次/分钟
-            "admin":  (30, 60),    # 管理后台：30次/分钟
-            "list":   (30, 60),    # 列表查询：30次/分钟
-            "upload": (20, 60),    # 上传：20次/分钟
-            "default": (120, 60),  # 其他：120次/分钟
-        }
-        return limits.get(group, (120, 60))
+        return (60, 60)
 
     def check(self, request):
         """检查当前请求是否超限，超限返回 429 Response，否则返回 None"""
@@ -58,7 +51,7 @@ class RateLimiter:
 
         if len(self._records[key]) >= max_req:
             return Response(
-                json.dumps({"detail": f"请求过于频繁，请稍后再试（{max_req}次/{window}秒）"}, ensure_ascii=False),
+                json.dumps({"detail": "请求过于频繁，请稍后再试"}, ensure_ascii=False),
                 status_code=429,
                 media_type="application/json",
             )
