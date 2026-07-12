@@ -166,6 +166,8 @@ def redeem_code(body: RedeemBody, request: Request, db: Session = Depends(get_db
     return {
         "ok": True,
         "days_added": rc.days,
+        "level_id": MEMBER_LEVEL_ID,
+        "level_name": "会员用户",
         "expires_at": str(new_expires),
         "message": f"成功兑换 {rc.days} 天使用期限",
     }

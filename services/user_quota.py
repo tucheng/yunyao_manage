@@ -4,7 +4,7 @@ from typing import Literal
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
-from models import User, UserDailyRecipeView, UserLevel, UserUsageQuota
+from models import RedeemLog, User, UserDailyRecipeView, UserLevel, UserUsageQuota
 
 
 TRIAL_LEVEL_ID = 1
@@ -160,10 +160,19 @@ def run_daily_maintenance(db: Session) -> tuple[int, int]:
     refreshed = 0
     users = db.query(User).all()
     for user in users:
+        upgraded_from_redeem = False
+        if (
+            user.level_id == TRIAL_LEVEL_ID
+            and user.expires_at
+            and user.expires_at > now
+            and db.query(RedeemLog.id).filter(RedeemLog.user_id == user.id).first()
+        ):
+            user.level_id = MEMBER_LEVEL_ID
+            upgraded_from_redeem = True
         if downgrade_user_if_expired(user, now):
             downgraded += 1
         quota = db.query(UserUsageQuota).filter(UserUsageQuota.user_id == user.id).first()
-        if quota is None or quota.quota_date != date.today():
+        if upgraded_from_redeem or quota is None or quota.quota_date != date.today():
             get_or_create_quota(db, user, force_reset=True)
             refreshed += 1
     db.commit()
