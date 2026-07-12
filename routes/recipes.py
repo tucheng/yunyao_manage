@@ -515,9 +515,13 @@ def record_recipe_view(recipe_id: int, user_id: int = Query(...), db: Session = 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    if not db.query(Recipe.id).filter(Recipe.id == recipe_id).first():
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
         raise HTTPException(status_code=404, detail="配方不存在")
-    consumed, remaining = consume_recipe_view_once(db, user, recipe_id)
+    if recipe.user_id == user_id:
+        consumed, remaining = False, None
+    else:
+        consumed, remaining = consume_recipe_view_once(db, user, recipe_id)
     existing = db.query(RecipeView).filter(
         RecipeView.recipe_id == recipe_id,
         RecipeView.user_id == user_id,
@@ -750,8 +754,10 @@ def get_recipe(
     user = db.query(User).filter(User.id == current_user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
-    consume_recipe_view_once(db, user, recipe_id)
-    db.commit()
+    # 作者查看自己的配方不受每日额度限制，也不扣减查看额度。
+    if recipe.user_id != current_user_id:
+        consume_recipe_view_once(db, user, recipe_id)
+        db.commit()
 
     # 付费/显摆模式：隐藏原料和步骤
     recipe.is_purchased = False

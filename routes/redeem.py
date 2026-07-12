@@ -153,6 +153,8 @@ def redeem_code(body: RedeemBody, request: Request, db: Session = Depends(get_db
     new_expires = base_time + timedelta(days=rc.days)
     user.expires_at = new_expires
     user.level_id = MEMBER_LEVEL_ID
+    # Session 关闭了 autoflush；先持久化等级，再按新等级同步当日额度。
+    db.flush([user])
 
     # 记录
     rc.current_uses += 1
@@ -169,5 +171,13 @@ def redeem_code(body: RedeemBody, request: Request, db: Session = Depends(get_db
         "level_id": MEMBER_LEVEL_ID,
         "level_name": "会员用户",
         "expires_at": str(new_expires),
+        "quota": {
+            "quota_date": str(quota.quota_date),
+            "paid_recipe_remaining": quota.paid_recipe_remaining,
+            "free_recipe_remaining": quota.free_recipe_remaining,
+            "work_remaining": quota.work_remaining,
+            "recipe_view_remaining": quota.recipe_view_remaining,
+            "redeem_count": quota.redeem_count,
+        },
         "message": f"成功兑换 {rc.days} 天使用期限",
     }

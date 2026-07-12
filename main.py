@@ -27,6 +27,7 @@ from routes import (
     glossary,
     materials,
     notifications,
+    ocr,
     pay,
     recipe_ingredients,
     recipes,
@@ -247,6 +248,7 @@ app.include_router(curves.router)
 app.include_router(social.router)
 app.include_router(works.router)
 app.include_router(upload.router)
+app.include_router(ocr.router)
 app.include_router(work_comments.router)
 app.include_router(glossary.router)
 app.include_router(ceramic_materials.router)

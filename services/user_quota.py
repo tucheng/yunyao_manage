@@ -110,7 +110,10 @@ def consume_quota(db: Session, user: User, kind: QuotaKind) -> int:
     field = _REMAINING_FIELD[kind]
     remaining = getattr(quota, field) or 0
     if remaining <= 0:
-        raise HTTPException(status_code=403, detail=f"今天{_QUOTA_LABEL[kind]}额度已使用完")
+        if kind in ("paid_recipe", "free_recipe"):
+            raise HTTPException(status_code=403, detail="今天发布配方的额度已用完！")
+        else:
+            raise HTTPException(status_code=403, detail=f"今天{_QUOTA_LABEL[kind]}额度已使用完")
     remaining -= 1
     setattr(quota, field, remaining)
     db.flush()

@@ -248,7 +248,11 @@ def get_publish_status(user_id: Optional[int] = Query(None), db: Session = Depen
 
 
 @router.get("/view-status")
-def get_view_status(user_id: int = Query(...), db: Session = Depends(get_db)):
+def get_view_status(
+    user_id: int = Query(...),
+    recipe_id: Optional[int] = Query(default=None),
+    db: Session = Depends(get_db),
+):
     """检查用户今日配方查看状态"""
     from datetime import datetime, time
     from models import RecipeView, UserLevel
@@ -256,6 +260,11 @@ def get_view_status(user_id: int = Query(...), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         return {"can_view": False, "reason": "用户不存在"}
+
+    if recipe_id is not None:
+        recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+        if recipe and recipe.user_id == user_id:
+            return {"can_view": True, "is_owner": True, "quota_consumed": False, "reason": ""}
 
     from services.user_quota import get_or_create_quota
     quota, level = get_or_create_quota(db, user)
