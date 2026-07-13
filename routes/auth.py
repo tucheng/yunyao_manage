@@ -19,6 +19,7 @@ from database import get_db
 from encryption_utils import encrypt, hash_for_lookup
 from models import User
 from routes.curves import create_default_user_curves
+from services.user_quota import get_or_create_quota
 from verification_sender import get_settings as get_verification_settings, send_verification_code
 from datetime import datetime, timedelta
 
@@ -100,6 +101,12 @@ def _login_response(user: User, db: Session | None = None, password: str | None 
         db.commit()
         db.refresh(user)
     return auth_payload(user)
+
+
+def _initialize_new_user(db: Session, user: User) -> None:
+    """注册成功后立即按当前等级生成当天额度。"""
+    get_or_create_quota(db, user)
+    db.commit()
 
 
 @router.post("/send-code")
@@ -275,6 +282,7 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     db.add(user)
     db.commit()
     db.refresh(user)
+    _initialize_new_user(db, user)
     create_default_user_curves(db, user.id)
     return auth_payload(user)
 
@@ -331,6 +339,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
             db.add(user)
             db.commit()
             db.refresh(user)
+            _initialize_new_user(db, user)
             create_default_user_curves(db, user.id)
         return auth_payload(user)
 
@@ -356,6 +365,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
             db.add(user)
             db.commit()
             db.refresh(user)
+            _initialize_new_user(db, user)
             create_default_user_curves(db, user.id)
         return auth_payload(user)
 
@@ -404,6 +414,3 @@ def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
 @router.post("/mp-login")
 def mp_login(body: LoginRequest, db: Session = Depends(get_db)):
     return login(body, db)
-
-
-
