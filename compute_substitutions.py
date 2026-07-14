@@ -77,7 +77,6 @@ try:
                     source_material_id=mid,
                     target_material_id=oid,
                     similarity_score=score,
-                    status='pending',
                     note=''
                 )
                 db.add(sub)

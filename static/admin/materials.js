@@ -75,16 +75,14 @@ window.showSubstitutions = function(materialId) {
       '<th style="position:sticky;top:0;background:#fafafa;z-index:1">材料 / 成分</th>' +
       oxideLabels.map(function(l) { return '<th style="position:sticky;top:0;background:#fafafa;z-index:1">' + l + '</th>'; }).join('') +
       '<th style="position:sticky;top:0;background:#fafafa;z-index:1">相似度</th>' +
-      '<th style="position:sticky;top:0;background:#fafafa;z-index:1">操作</th>' +
       '</tr></thead><tbody>';
 
     html += '<tr style="background:#fff8e1"><td style="font-weight:600;color:#8B6914"><strong>' + esc(src.name) + '</strong><br><small>原料</small></td>';
     oxideKeys.forEach(function(k) { html += '<td style="text-align:center;font-weight:600">' + (src[k] != null ? src[k] : '-') + '</td>'; });
-    html += '<td style="text-align:center;color:#999">-</td><td style="text-align:center;color:#ccc">-</td></tr>';
+    html += '<td style="text-align:center;color:#999">-</td></tr>';
 
     subs.forEach(function(s) {
-      var statusLabel = s.status === 'confirmed' ? '已确认' : s.status === 'ignored' ? '已忽略' : '待审';
-      html += '<tr><td style="font-weight:600">' + esc(s.target_name) + '<br><small style="color:#888">' + statusLabel + '</small></td>';
+      html += '<tr><td style="font-weight:600">' + esc(s.target_name) + '</td>';
       oxideKeys.forEach(function(k) {
         var tVal = s[k];
         var srcVal = src[k];
@@ -93,22 +91,11 @@ window.showSubstitutions = function(materialId) {
         if (diff != null && Math.abs(diff) > 0.5) { cell += ' <span style="color:' + (diff > 0 ? '#e74c3c' : '#27ae60') + ';font-weight:600">(' + (diff > 0 ? '+' : '') + diff + ')</span>'; }
         html += '<td style="text-align:center">' + cell + '</td>';
       });
-      html += '<td style="text-align:center">' + s.similarity_score + '%</td><td style="text-align:center;white-space:nowrap">';
-      if (s.status !== 'confirmed') html += '<button class="btn btn-sm btn-primary" onclick="window.confirmSub(' + s.id + ')">确认</button> ';
-      if (s.status !== 'ignored') html += '<button class="btn btn-sm" onclick="window.ignoreSub(' + s.id + ')">忽略</button>';
-      html += '</td></tr>';
+      html += '<td style="text-align:center">' + s.similarity_score + '%</td></tr>';
     });
     html += '</tbody></table></div>';
     window.showModal(html);
   }).catch(function(e) { toast(e.message || '加载失败', 'error'); });
-};
-
-window.confirmSub = function(id) {
-  api('/materials/substitutions/' + id, { method: 'PATCH', body: JSON.stringify({ status: 'confirmed' }) }).then(function() { toast('已确认'); }).catch(function(e) { toast(e.message || '操作失败', 'error'); });
-};
-
-window.ignoreSub = function(id) {
-  api('/materials/substitutions/' + id, { method: 'PATCH', body: JSON.stringify({ status: 'ignored' }) }).then(function() { toast('已忽略'); }).catch(function(e) { toast(e.message || '操作失败', 'error'); });
 };
 
 window.showMaterialDetail = function(id) {

@@ -14,7 +14,7 @@
 4. [作品模块](#4-作品模块-works)
 5. [兑换码](#5-兑换码)
 6. [配料表](#6-配料表-recipe-ingredients)
-7. [材料库存/替换](#7-材料库存替换-materials)
+7. [材料库存/相似品](#7-材料库存相似品-materials)
 8. [烧制曲线](#8-烧制曲线-curves)
 9. [社交/消息](#9-社交消息-social)
 10. [通知/投诉](#10-通知投诉)
@@ -221,7 +221,7 @@
 
 ---
 
-## 7. 材料库存/替换 (materials)
+## 7. 材料库存/相似品 (materials)
 
 **前缀**: `/materials`
 
@@ -244,11 +244,10 @@
 | POST | `/materials/move_to_wishlist/{item_id}` | 移入购物清单 | `user_id` |
 | POST | `/materials/wishlist/reorder` | 排序 | `user_id` + body: `{ ids: [int] }` |
 
-### 材料替换
+### 材料相似品
 | 方法 | 路径 | 说明 |
 |------|------|------|
-| GET | `/materials/{material_id}/substitutions` | 获取替换建议（含全部氧化物） |
-| PATCH | `/materials/substitutions/{sub_id}` | 确认/忽略替换建议 |
+| GET | `/materials/{material_id}/substitutions` | 获取相似品（含全部氧化物，只读） |
 
 ---
 

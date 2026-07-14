@@ -168,6 +168,6 @@ class RecipeIngredientOut(BaseModel):
     note: Optional[str] = None
     is_additional: int = 0
     sort_order: int = 0
-    material_id: Optional[int] = None  # 材料库中对应的材料ID，用于查询替代品
+    material_id: Optional[int] = None  # 材料库中对应的材料ID，用于查询相似品
 
     model_config = {"from_attributes": True}

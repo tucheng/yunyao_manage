@@ -270,7 +270,7 @@ def delete_material_molecule(material_id: int, request: Request, db: Session = D
         MaterialSubstitution.target_material_id == material.id,
     )).first()
     if is_referenced:
-        raise HTTPException(status_code=409, detail="该材料已有关联替代数据，暂不能删除")
+        raise HTTPException(status_code=409, detail="该材料已有关联相似品数据，暂不能删除")
     db.delete(material)
     db.commit()
     return {"message": "已删除"}
@@ -489,12 +489,12 @@ def reorder_wishlist(data: dict, user_id: int = Query(...), db: Session = Depend
     return {"message": "排序已更新"}
 
 
-# ===== 材料替换关联 =====
+# ===== 材料相似关系 =====
 
 
 @router.get("/{material_id}/substitutions")
 def get_substitutions(material_id: int, db: Session = Depends(get_db)) -> list:
-    """获取某材料的替换建议（按相似度降序）"""
+    """获取某材料的相似品（按相似度降序，只读展示）"""
     from models import Material, MaterialSubstitution
 
     material = db.query(Material).filter(Material.id == material_id).first()
@@ -522,7 +522,6 @@ def get_substitutions(material_id: int, db: Session = Depends(get_db)) -> list:
             "target_source": target.source or "",
             "target_formula": target.formula or "",
             "similarity_score": s.similarity_score,
-            "status": s.status,
             "note": s.note or "",
             # 目标材料氧化物成分
             "sio2": target.sio2, "al2o3": target.al2o3,
@@ -539,20 +538,3 @@ def get_substitutions(material_id: int, db: Session = Depends(get_db)) -> list:
         })
 
     return result
-
-
-@router.patch("/substitutions/{sub_id}")
-def update_substitution(sub_id: int, data: dict, db: Session = Depends(get_db)):
-    """更新替换关联状态（confirmed/ignored）或备注"""
-    from models import MaterialSubstitution
-
-    sub = db.query(MaterialSubstitution).filter(MaterialSubstitution.id == sub_id).first()
-    if not sub:
-        raise HTTPException(status_code=404, detail="替换关联不存在")
-
-    if "status" in data:
-        sub.status = data["status"]
-    if "note" in data:
-        sub.note = data["note"]
-    db.commit()
-    return {"message": "更新成功", "id": sub.id, "status": sub.status}

@@ -360,15 +360,15 @@ class RecipeSeger(Base):
 
 
 class MaterialSubstitution(Base):
-    """材料替换关联表"""
+    """材料相似关系表"""
     __tablename__ = "material_substitutions"
 
     id = Column(Integer, primary_key=True, index=True)
-    source_material_id = Column(Integer, ForeignKey("materials.id"), nullable=False, comment="源材料（需要被替换的）")
-    target_material_id = Column(Integer, ForeignKey("materials.id"), nullable=False, comment="目标材料（替换建议）")
+    source_material_id = Column(Integer, ForeignKey("materials.id"), nullable=False, comment="源材料")
+    target_material_id = Column(Integer, ForeignKey("materials.id"), nullable=False, comment="相似材料")
     similarity_score = Column(Float, default=0.0, comment="成分相似度 0-100")
-    status = Column(String(20), default="pending", comment="pending/confirmed/ignored")
-    note = Column(String(500), default="", comment="替换备注（如用量调整建议）")
+    status = Column(String(20), nullable=True, comment="历史兼容字段，不再参与业务逻辑")
+    note = Column(String(500), default="", comment="相似关系备注")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
