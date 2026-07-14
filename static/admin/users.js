@@ -12,7 +12,7 @@ window.loadUsers = function(p) {
     var tbody = document.getElementById('userTableBody');
     var html = '';
     users.forEach(function(u) {
-      var levelBadge = u.level_name === 'VIP大师' ? 'badge-admin' : 'badge-free';
+      var levelBadge = u.level_name === 'VIP大师' ? 'badge-admin' : 'badge-neutral';
       html += '<tr>' +
         '<td>' + u.id + '</td>' +
         '<td><strong>' + esc(u.nickname || '?') + '</strong></td>' +
@@ -20,14 +20,13 @@ window.loadUsers = function(p) {
         '<td><span class="badge ' + levelBadge + '">' + esc(u.level_name) + '</span></td>' +
         '<td>' + (u.is_admin ? '<span class="badge badge-admin">是</span>' : '否') + '</td>' +
         '<td>' + (u.recipe_count || 0) + '</td>' +
-        '<td>' + (u.paid_count > 0 ? '<span class="badge badge-paid">' + u.paid_count + '</span>' : u.paid_count) + '</td>' +
         '<td>' + (u.work_count || 0) + '</td>' +
         '<td>' + (u.is_muted ? '<span class="tag-muted">🚫 禁言</span>' : '<span style="color:#27ae60">正常</span>') + '</td>' +
         '<td><button class="btn btn-sm" onclick="window.showUserModal(' + u.id + ')">编辑</button></td>' +
         '</tr>';
     });
     if (users.length === 0) {
-      html = '<tr><td colspan="10" style="text-align:center;color:#999;padding:24px">暂无用户</td></tr>';
+      html = '<tr><td colspan="9" style="text-align:center;color:#999;padding:24px">暂无用户</td></tr>';
     }
     tbody.innerHTML = html;
 

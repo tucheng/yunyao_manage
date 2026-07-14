@@ -133,7 +133,6 @@ def auth_payload(user: User) -> dict[str, Any]:
         "user_id": user.id,
         "username": user.username or "",
         "nickname": user.nickname or "",
-        "openid": user.openid,
         "role": user_role(user),
         "access_token": create_access_token(user),
         "token_type": "bearer",

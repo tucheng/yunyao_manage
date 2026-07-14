@@ -1,14 +1,14 @@
 import json
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import func
 from database import get_db
 from models import AppSetting, User, UserLevel, Recipe, Work, Notification, WorkAttributeOption, Material
 from pydantic import BaseModel
 from typing import Optional
-from app_config import ADMIN_TOKEN, ADMIN_USER_IDS
-from auth_utils import decode_access_token, hash_password, verify_password
+from app_config import ADMIN_USER_IDS
+from auth_utils import decode_access_token, hash_password, token_from_request, verify_password
 from encryption_utils import decrypt
 from verification_sender import get_settings as get_verification_settings, save_settings as save_verification_settings
 from color_names import get_color_range_config
@@ -17,18 +17,17 @@ from services.user_quota import SYSTEM_LEVEL_NAMES, reset_user_quota
 
 router = APIRouter(prefix="/admin", tags=["后台管理"])
 
-# ===== 管理认证（支持 ADMIN_TOKEN 或用户登录 JWT）=====
+# ===== 管理认证（仅接受 Authorization Bearer JWT）=====
 
 class AdminLoginRequest(BaseModel):
     username: str
     password: str
 
 
-def verify_admin(token: str = Query(...)):
-    # 方式1: ADMIN_TOKEN 兼容
-    if ADMIN_TOKEN and token == ADMIN_TOKEN:
-        return
-    # 方式2: 用户 JWT + DB is_admin 字段
+def verify_admin(request: Request):
+    token = token_from_request(request)
+    if not token:
+        raise HTTPException(status_code=401, detail="缺少管理认证")
     try:
         payload = decode_access_token(token)
         uid = int(payload.get("sub", 0))
@@ -74,8 +73,7 @@ def admin_login(body: AdminLoginRequest, db: Session = Depends(get_db)):
 
 @router.get("/users")
 def list_users(q: str = "", page: int = 1, page_size: int = Query(default=20, alias="page_size"),
-               token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+               _admin=Depends(verify_admin), db: Session = Depends(get_db)):
     qry = db.query(User)
     if q:
         qry = qry.filter(
@@ -91,11 +89,6 @@ def list_users(q: str = "", page: int = 1, page_size: int = Query(default=20, al
     recipe_counts = dict(
         db.query(Recipe.user_id, func.count(Recipe.id)).filter(Recipe.user_id.in_(user_ids)).group_by(Recipe.user_id).all()
     )
-    paid_counts = dict(
-        db.query(Recipe.user_id, func.count(Recipe.id)).filter(
-            Recipe.user_id.in_(user_ids), Recipe.price > 0
-        ).group_by(Recipe.user_id).all()
-    )
     work_counts = dict(
         db.query(Work.user_id, func.count(Work.id)).filter(Work.user_id.in_(user_ids)).group_by(Work.user_id).all()
     )
@@ -110,8 +103,6 @@ def list_users(q: str = "", page: int = 1, page_size: int = Query(default=20, al
             "id": u.id,
             "username": u.username or "",
             "nickname": u.nickname,
-            "openid": u.openid[:8] + "..." if u.openid else "",
-            "balance": u.balance or 0,
             "trust_score": u.trust_score or 100,
             "level_id": u.level_id or 1,
             "level_name": level["name"],
@@ -119,7 +110,6 @@ def list_users(q: str = "", page: int = 1, page_size: int = Query(default=20, al
             "is_admin": bool(u.is_admin),
             "expires_at": str(u.expires_at) if u.expires_at else "",
             "recipe_count": recipe_counts.get(u.id, 0),
-            "paid_count": paid_counts.get(u.id, 0),
             "work_count": work_counts.get(u.id, 0),
             "created_at": str(u.created_at) if u.created_at else "",
         })
@@ -128,23 +118,19 @@ def list_users(q: str = "", page: int = 1, page_size: int = Query(default=20, al
 
 
 @router.get("/users/{user_id}")
-def get_user(user_id: int, token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+def get_user(user_id: int, _admin=Depends(verify_admin), db: Session = Depends(get_db)):
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="用户不存在")
 
     recipe_count = db.query(Recipe).filter(Recipe.user_id == user_id).count()
-    paid_count = db.query(Recipe).filter(Recipe.user_id == user_id, Recipe.price > 0).count()
     work_count = db.query(Work).filter(Work.user_id == user_id).count()
     levels = {l.id: l.name for l in db.query(UserLevel).all()}
 
     return {
         "id": u.id,
         "nickname": u.nickname,
-        "openid": u.openid,
         "avatar": u.avatar,
-        "balance": u.balance or 0,
         "trust_score": u.trust_score or 100,
         "level_id": u.level_id or 1,
         "level_name": levels.get(u.level_id or 1, "普通用户"),
@@ -152,8 +138,6 @@ def get_user(user_id: int, token: str = Query(...), db: Session = Depends(get_db
         "is_admin": bool(u.is_admin),
         "expires_at": str(u.expires_at) if u.expires_at else "",
         "recipe_count": recipe_count,
-        "paid_count": paid_count,
-        "free_count": recipe_count - paid_count,
         "work_count": work_count,
         "created_at": str(u.created_at) if u.created_at else "",
     }
@@ -167,8 +151,7 @@ class UpdateUserBody(BaseModel):
 
 
 @router.put("/users/{user_id}")
-def update_user(user_id: int, body: UpdateUserBody, token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+def update_user(user_id: int, body: UpdateUserBody, _admin=Depends(verify_admin), db: Session = Depends(get_db)):
     u = db.query(User).filter(User.id == user_id).first()
     if not u:
         raise HTTPException(status_code=404, detail="用户不存在")
@@ -200,15 +183,13 @@ def update_user(user_id: int, body: UpdateUserBody, token: str = Query(...), db:
 # ========= 等级管理 =========
 
 @router.get("/levels")
-def list_levels(token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+def list_levels(_admin=Depends(verify_admin), db: Session = Depends(get_db)):
     levels = db.query(UserLevel).order_by(UserLevel.sort_order).all()
     return [
         {
             "id": l.id,
             "name": l.name,
-            "max_paid_recipes": l.max_paid_recipes,
-            "max_free_recipes": l.max_free_recipes,
+            "max_recipes": l.max_recipes,
             "max_works": l.max_works,
             "max_views": l.max_views,
             "description": l.description,
@@ -221,15 +202,14 @@ def list_levels(token: str = Query(...), db: Session = Depends(get_db)):
 
 class LevelBody(BaseModel):
     name: str
-    max_paid_recipes: int = 0
-    max_free_recipes: int = 10
+    max_recipes: int = 10
     max_works: int = 50
     max_views: int = 0
     description: str = ""
     sort_order: int = 0
 
     def validate_quotas(self):
-        values = (self.max_paid_recipes, self.max_free_recipes, self.max_works, self.max_views)
+        values = (self.max_recipes, self.max_works, self.max_views)
         if any(value < 0 for value in values):
             raise HTTPException(status_code=400, detail="每日额度不能小于0")
 
@@ -300,8 +280,7 @@ def _ensure_json_setting(db: Session, key: str, default):
 
 
 @router.post("/levels")
-def create_level(body: LevelBody, token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+def create_level(body: LevelBody, _admin=Depends(verify_admin), db: Session = Depends(get_db)):
     body.validate_quotas()
     level = UserLevel(**body.model_dump())
     db.add(level)
@@ -311,8 +290,7 @@ def create_level(body: LevelBody, token: str = Query(...), db: Session = Depends
 
 
 @router.put("/levels/{level_id}")
-def update_level(level_id: int, body: LevelBody, token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+def update_level(level_id: int, body: LevelBody, _admin=Depends(verify_admin), db: Session = Depends(get_db)):
     body.validate_quotas()
     l = db.query(UserLevel).filter(UserLevel.id == level_id).first()
     if not l:
@@ -327,8 +305,7 @@ def update_level(level_id: int, body: LevelBody, token: str = Query(...), db: Se
 
 
 @router.delete("/levels/{level_id}")
-def delete_level(level_id: int, token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+def delete_level(level_id: int, _admin=Depends(verify_admin), db: Session = Depends(get_db)):
     if level_id in SYSTEM_LEVEL_NAMES:
         raise HTTPException(status_code=400, detail="默认等级不可删除")
     count = db.query(User).filter(User.level_id == level_id).count()
@@ -342,30 +319,26 @@ def delete_level(level_id: int, token: str = Query(...), db: Session = Depends(g
 # ========= 统计数据 =========
 
 @router.get("/stats")
-def stats(token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+def stats(_admin=Depends(verify_admin), db: Session = Depends(get_db)):
     return {
         "user_count": db.query(User).count(),
         "recipe_count": db.query(Recipe).count(),
-        "paid_recipe_count": db.query(Recipe).filter(Recipe.price > 0).count(),
         "work_count": db.query(Work).count(),
         "muted_count": db.query(User).filter(User.is_muted == True).count(),
     }
 
 
 @router.get("/verification-settings")
-def get_verification_config(token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+def get_verification_config(_admin=Depends(verify_admin), db: Session = Depends(get_db)):
     return get_verification_settings(db, mask_sensitive=True)
 
 
 @router.put("/verification-settings")
 def update_verification_config(
     body: VerificationSettingsBody,
-    token: str = Query(...),
+    _admin=Depends(verify_admin),
     db: Session = Depends(get_db),
 ):
-    verify_admin(token)
     if body.verification_account_mode not in ("sms", "email", "either"):
         raise HTTPException(status_code=400, detail="注册/登录验证方式不正确")
     if body.verification_channel not in ("debug", "email", "sms"):
@@ -376,46 +349,17 @@ def update_verification_config(
 # ========= 作品搜索配置 =========
 
 @router.get("/work-search-settings")
-def get_work_search_settings(token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+def get_work_search_settings(_admin=Depends(verify_admin), db: Session = Depends(get_db)):
     return {
         "temperature_ranges": _ensure_json_setting(db, "work_search_temperature_ranges", TEMPERATURE_RANGE_CONFIG),
         "color_ranges": _ensure_json_setting(db, "work_search_color_ranges", get_color_range_config()),
     }
-# ========= 付费功能开关 =========
-
-SYSTEM_PAID_ENABLED_KEY = "paid_enabled"
-
-
-@router.get("/paid-enabled")
-def get_paid_enabled(token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
-    return {"paid_enabled": _get_json_setting(db, SYSTEM_PAID_ENABLED_KEY, False)}
-
-
-class PaidEnabledBody(BaseModel):
-    paid_enabled: bool
-
-
-@router.put("/paid-enabled")
-def update_paid_enabled(
-    body: PaidEnabledBody,
-    token: str = Query(...),
-    db: Session = Depends(get_db),
-):
-    verify_admin(token)
-    _set_json_setting(db, SYSTEM_PAID_ENABLED_KEY, body.paid_enabled)
-    db.commit()
-    return {"ok": True, "paid_enabled": body.paid_enabled}
-
-
 @router.put("/work-search-settings")
 def update_work_search_settings(
     body: WorkSearchSettingsBody,
-    token: str = Query(...),
+    _admin=Depends(verify_admin),
     db: Session = Depends(get_db),
 ):
-    verify_admin(token)
     temperature_ranges = [item.model_dump() for item in body.temperature_ranges]
     color_ranges = [item.model_dump() for item in body.color_ranges]
 
@@ -460,9 +404,8 @@ class WorkAttributeOptionBody(BaseModel):
 
 
 @router.get("/work-attributes")
-def list_work_attributes(token: str = Query(...), db: Session = Depends(get_db)):
+def list_work_attributes(_admin=Depends(verify_admin), db: Session = Depends(get_db)):
     """获取所有作品属性选项，按 category 分组"""
-    verify_admin(token)
     options = db.query(WorkAttributeOption).order_by(WorkAttributeOption.category, WorkAttributeOption.sort_order).all()
     grouped = {}
     for opt in options:
@@ -475,8 +418,7 @@ def list_work_attributes(token: str = Query(...), db: Session = Depends(get_db))
 
 
 @router.post("/work-attributes")
-def create_work_attribute(body: WorkAttributeOptionBody, token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+def create_work_attribute(body: WorkAttributeOptionBody, _admin=Depends(verify_admin), db: Session = Depends(get_db)):
     opt = WorkAttributeOption(category=body.category, value=body.value, sort_order=body.sort_order)
     db.add(opt)
     db.commit()
@@ -485,8 +427,7 @@ def create_work_attribute(body: WorkAttributeOptionBody, token: str = Query(...)
 
 
 @router.put("/work-attributes/{opt_id}")
-def update_work_attribute(opt_id: int, body: WorkAttributeOptionBody, token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+def update_work_attribute(opt_id: int, body: WorkAttributeOptionBody, _admin=Depends(verify_admin), db: Session = Depends(get_db)):
     opt = db.query(WorkAttributeOption).filter(WorkAttributeOption.id == opt_id).first()
     if not opt:
         raise HTTPException(status_code=404, detail="选项不存在")
@@ -498,8 +439,7 @@ def update_work_attribute(opt_id: int, body: WorkAttributeOptionBody, token: str
 
 
 @router.delete("/work-attributes/{opt_id}")
-def delete_work_attribute(opt_id: int, token: str = Query(...), db: Session = Depends(get_db)):
-    verify_admin(token)
+def delete_work_attribute(opt_id: int, _admin=Depends(verify_admin), db: Session = Depends(get_db)):
     opt = db.query(WorkAttributeOption).filter(WorkAttributeOption.id == opt_id).first()
     if not opt:
         raise HTTPException(status_code=404, detail="选项不存在")
@@ -518,70 +458,6 @@ def get_public_work_attributes(db: Session = Depends(get_db)):
     for opt in options:
         grouped.setdefault(opt.category, []).append(opt.value)
     return grouped
-
-
-# ========= Glazy 海外材料查询 =========
-
-@router.get("/glazy-materials")
-def list_glazy_materials(
-    q: str = "",
-    page: int = 1,
-    page_size: int = Query(default=50, alias="page_size"),
-    token: str = Query(...),
-    db: Session = Depends(get_db),
-):
-    """查询 Glazy 海外材料"""
-    verify_admin(token)
-    qry = db.query(Material).filter(Material.source == "glazy")
-    if q:
-        like = f"%{q}%"
-        qry = qry.filter(
-            Material.name.like(like)
-            | Material.name_en.like(like)
-        )
-    total = qry.count()
-    items = qry.order_by(Material.name).offset((page - 1) * page_size).limit(page_size).all()
-    return {
-        "results": [
-            {
-                "glazy_id": m.source_id,
-                "name": m.name_en,
-                "name_cn": m.name or "",
-                "is_primitive": bool(m.is_primitive),
-                "sio2": m.sio2, "al2o3": m.al2o3,
-                "na2o": m.na2o, "k2o": m.k2o, "mgo": m.mgo,
-                "cao": m.cao, "fe2o3": m.fe2o3, "tio2": m.tio2,
-                "zno": m.zno, "b2o3": m.b2o3, "p2o5": m.p2o5, "loi": m.loi,
-                "thermal_expansion": m.thermal_expansion,
-            }
-            for m in items
-        ],
-        "total": total,
-        "page": page,
-    }
-
-
-@router.get("/glazy-materials/{glazy_id}")
-def get_glazy_material(glazy_id: int, token: str = Query(...), db: Session = Depends(get_db)):
-    """查询单个材料详情"""
-    verify_admin(token)
-    m = db.query(Material).filter(
-        Material.source == "glazy",
-        Material.source_id == glazy_id,
-    ).first()
-    if not m:
-        raise HTTPException(status_code=404, detail="材料不存在")
-    return {
-        "glazy_id": m.source_id,
-        "name": m.name_en,
-        "name_cn": m.name or "",
-        "is_primitive": bool(m.is_primitive),
-        "sio2": m.sio2, "al2o3": m.al2o3,
-        "na2o": m.na2o, "k2o": m.k2o, "mgo": m.mgo,
-        "cao": m.cao, "fe2o3": m.fe2o3, "tio2": m.tio2,
-        "zno": m.zno, "b2o3": m.b2o3, "p2o5": m.p2o5, "loi": m.loi,
-        "thermal_expansion": m.thermal_expansion,
-    }
 
 
 @router.get("/materials")

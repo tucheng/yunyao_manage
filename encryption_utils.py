@@ -7,12 +7,14 @@ import hashlib
 import os
 
 from cryptography.fernet import Fernet
+from app_config import ENCRYPTION_KEY_FILE, PERSONAL_DATA_ENCRYPTION_KEY
 
 
 def _load_key() -> bytes:
-    """从 .encryption_key 文件加载 Fernet 密钥"""
-    key_path = os.path.join(os.path.dirname(__file__), ".encryption_key")
-    with open(key_path) as f:
+    """优先从环境变量读取，开发环境可回退到本地密钥文件。"""
+    if PERSONAL_DATA_ENCRYPTION_KEY:
+        return PERSONAL_DATA_ENCRYPTION_KEY.encode("ascii")
+    with open(ENCRYPTION_KEY_FILE, encoding="ascii") as f:
         return f.read().strip().encode()
 
 

@@ -5,6 +5,7 @@ from email.mime.text import MIMEText
 import requests
 from sqlalchemy.orm import Session
 
+from app_config import IS_PRODUCTION
 from models import AppSetting
 
 
@@ -133,4 +134,6 @@ def send_verification_code(db: Session, *, email: str, phone: str, code: str) ->
             raise RuntimeError("当前配置为短信验证码，请输入手机号")
         send_sms_code(settings, phone, code)
         return {"channel": "sms"}
+    if IS_PRODUCTION:
+        raise RuntimeError("生产环境禁止使用 debug 验证码通道")
     return {"channel": "debug", "debug_code": code}

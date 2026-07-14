@@ -5,12 +5,6 @@ from auth_utils import get_current_user
 from database import get_db
 from encryption_utils import encrypt, decrypt, hash_for_lookup
 from models import User, UserLevel, Recipe, Work, Follow, Favorite, FiringCurve, ToBeFired
-from auth_utils import get_current_user
-from models import AppSetting
-from sqlalchemy import func
-import json
-
-PAID_ENABLED_KEY = "paid_enabled"
 
 
 def _safe_decrypt(val):
@@ -23,21 +17,13 @@ def _safe_decrypt(val):
         return val
 
 
-def _get_paid_enabled(db: Session) -> bool:
-    row = db.query(AppSetting).filter(AppSetting.key == PAID_ENABLED_KEY).first()
-    if not row or not row.value:
-        return False
-    try:
-        return json.loads(row.value) is True
-    except Exception:
-        return False
-
 router = APIRouter(prefix="/users", tags=["用户"])
 
 
 @router.get("/profile")
-def get_profile(user_id: int = Query(...), db: Session = Depends(get_db)):
-    """获取用户个人信息 + 统计数据"""
+def get_profile(request: Request, user_id: int = Query(...), db: Session = Depends(get_db)):
+    """获取公开用户资料；仅本人可读取私有统计和账号字段。"""
+    viewer = get_current_user(request, db)
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=404, detail="用户不存在")
@@ -69,34 +55,36 @@ def get_profile(user_id: int = Query(...), db: Session = Depends(get_db)):
         UserLevel.id == (user.level_id or 1)
     ).first()
 
-    return {
+    result = {
         "id": user.id,
-        "username": user.username or "",
         "nickname": user.nickname or "",
         "avatar": user.avatar or "",
         "bio": user.bio or "",
-        "gender": user.gender or "",
-        "birthday": user.birthday or "",
         "location": user.location or "",
         "level_id": user.level_id or 1,
         "level_name": level.name if level else "普通用户",
-        "can_publish_paid": (level.max_paid_recipes > 0) if level else False,
-        "paid_enabled": _get_paid_enabled(db),
         "following_count": following_count,
         "follower_count": follower_count,
         "recipe_count": recipe_count,
         "work_count": work_count,
-        "favorite_count": fav_count,
         "collected_count": collected_count,
-        "curve_count": curve_count,
-        "to_fire_count": to_fire_count,
         "created_at": user.created_at,
-        "expires_at": str(user.expires_at) if user.expires_at else "",
     }
+    if viewer.id == user.id:
+        result.update({
+            "username": user.username or "",
+            "gender": user.gender or "",
+            "birthday": user.birthday or "",
+            "favorite_count": fav_count,
+            "curve_count": curve_count,
+            "to_fire_count": to_fire_count,
+            "expires_at": str(user.expires_at) if user.expires_at else "",
+        })
+    return result
 
 @router.get("/me")
 def get_my_profile(request: Request, db: Session = Depends(get_db)):
-    """获取当前登录用户的完整信息（含手机号/邮箱/余额等敏感字段）"""
+    """获取当前登录用户的完整信息。"""
     user = get_current_user(request, db)
 
     level = db.query(UserLevel).filter(
@@ -114,11 +102,8 @@ def get_my_profile(request: Request, db: Session = Depends(get_db)):
         "location": user.location or "",
         "phone": _safe_decrypt(user.phone),
         "email": _safe_decrypt(user.email),
-        "balance": user.balance or 0,
         "level_id": user.level_id or 1,
         "level_name": level.name if level else "普通用户",
-        "can_publish_paid": (level.max_paid_recipes > 0) if level else False,
-        "paid_enabled": _get_paid_enabled(db),
         "created_at": user.created_at,
         "expires_at": str(user.expires_at) if user.expires_at else "",
     }
@@ -224,20 +209,17 @@ def get_publish_status(user_id: Optional[int] = Query(None), db: Session = Depen
     if not level:
         return {"ok": False, "reason": "用户等级异常"}
 
-    recipe_remaining = quota.free_recipe_remaining if quota else max(0, level.max_free_recipes or 0)
-    paid_recipe_remaining = quota.paid_recipe_remaining if quota else max(0, level.max_paid_recipes or 0)
+    recipe_remaining = quota.recipe_remaining if quota else max(0, level.max_recipes or 0)
     work_remaining = quota.work_remaining if quota else max(0, level.max_works or 0)
 
     return {
         "ok": True,
         "can_publish_recipe": recipe_remaining > 0,
-        "can_publish_paid_recipe": paid_recipe_remaining > 0,
         "can_publish_work": work_remaining > 0,
         "recipe_remaining": recipe_remaining,
-        "paid_recipe_remaining": paid_recipe_remaining,
         "work_remaining": work_remaining,
-        "recipe_limit": level.max_free_recipes,
-        "recipe_count": (level.max_free_recipes or 0) - recipe_remaining,
+        "recipe_limit": level.max_recipes,
+        "recipe_count": (level.max_recipes or 0) - recipe_remaining,
         "work_limit": level.max_works,
         "work_count": (level.max_works or 0) - work_remaining,
         "is_guest": is_guest,

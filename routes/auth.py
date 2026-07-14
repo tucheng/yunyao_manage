@@ -6,14 +6,12 @@ import string
 import time
 import uuid
 
-import requests
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from fastapi.responses import Response
 from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app_config import ENABLE_MOCK_LOGIN, WX_APPID, WX_SECRET
 from auth_utils import auth_payload, hash_password, verify_password, token_from_request, decode_access_token, user_role
 from database import get_db
 from encryption_utils import encrypt, hash_for_lookup
@@ -52,16 +50,11 @@ class SendCodeRequest(BaseModel):
 
 
 class LoginRequest(BaseModel):
-    code: str = ""
     email: str = ""
     phone: str = ""
     password: str = ""
     verification_code: str = ""
     username: str = ""
-
-
-def _default_nickname(db: Session) -> str:
-    return f"用户{db.query(User).count() + 1}"
 
 
 def _normalize_verification_target(email: str, phone: str, db: Session) -> tuple[str, str, str]:
@@ -267,7 +260,6 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
     enc_email = encrypt(email) if email else None
     enc_phone = encrypt(phone) if phone else None
     user = User(
-        openid=f"email_{email}" if email else f"phone_{phone}",
         email=enc_email,
         phone=enc_phone,
         email_hash=hash_for_lookup(email) if email else None,
@@ -275,7 +267,6 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         password=hash_password(password),
         username=username,
         nickname=username,
-        balance=10000,
         level_id=1,
         expires_at=datetime.now() + timedelta(days=3),
     )
@@ -293,7 +284,6 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     phone = body.phone.strip() if body.phone else ""
     password = body.password
     verification_code = body.verification_code
-    code = body.code
 
     if (email or phone) and verification_code:
         email, phone, target_key = _normalize_verification_target(email, phone, db)
@@ -331,43 +321,6 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
         if not user or not ok:
             raise HTTPException(status_code=401, detail="用户名或密码错误")
         return _login_response(user, db, password, upgrade_hash)
-
-    if code and ENABLE_MOCK_LOGIN and not WX_APPID:
-        user = db.query(User).filter(User.openid == code).first()
-        if not user:
-            user = User(openid=code, nickname=_default_nickname(db), balance=10000, level_id=1, expires_at=datetime.now() + timedelta(days=3))
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-            _initialize_new_user(db, user)
-            create_default_user_curves(db, user.id)
-        return auth_payload(user)
-
-    if code:
-        if not WX_APPID or not WX_SECRET:
-            raise HTTPException(status_code=500, detail="微信登录未配置")
-        resp = requests.get(
-            "https://api.weixin.qq.com/sns/jscode2session",
-            params={
-                "appid": WX_APPID,
-                "secret": WX_SECRET,
-                "js_code": code,
-                "grant_type": "authorization_code",
-            },
-            timeout=8,
-        )
-        data = resp.json()
-        if "openid" not in data:
-            raise HTTPException(status_code=400, detail="登录失败")
-        user = db.query(User).filter(User.openid == data["openid"]).first()
-        if not user:
-            user = User(openid=data["openid"], balance=0, level_id=1, expires_at=datetime.now() + timedelta(days=3))
-            db.add(user)
-            db.commit()
-            db.refresh(user)
-            _initialize_new_user(db, user)
-            create_default_user_curves(db, user.id)
-        return auth_payload(user)
 
     raise HTTPException(status_code=400, detail="请提供登录方式")
 
@@ -409,8 +362,3 @@ def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
     user.password = hash_password(body.password)
     db.commit()
     return {"message": "密码重置成功"}
-
-
-@router.post("/mp-login")
-def mp_login(body: LoginRequest, db: Session = Depends(get_db)):
-    return login(body, db)

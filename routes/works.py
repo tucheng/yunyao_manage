@@ -6,6 +6,7 @@ from sqlalchemy import func, inspect, text
 from datetime import datetime
 import json
 from color_names import color_name_in_range, get_color_range_config, get_glaze_colors_data
+from image_utils import normalize_image_url, parse_image_list, serialize_image_list
 
 router = APIRouter(prefix="/works", tags=["作品"])
 
@@ -92,7 +93,7 @@ def following_works(
             "avatar": user.avatar if user else "",
             "recipe_id": work.recipe_id,
             "image": _image_url(work.image),
-            "images": [_image_url(u) for u in (json.loads(work.images) if work.images else []) if u],
+            "images": parse_image_list(work.images),
             "description": work.description or "",
             "body_material": work.body_material or "",
             "kiln_type": work.kiln_type or "",
@@ -108,12 +109,7 @@ def following_works(
 
 
 def _image_url(image: str) -> str:
-    image = (image or "").strip()
-    if not image:
-        return ""
-    if image.startswith(("http://", "https://", "/")):
-        return image
-    return f"/uploads/{image}"
+    return normalize_image_url(image)
 
 
 # 初始化表
@@ -434,12 +430,7 @@ def list_works(
     result = []
     for work, user, recipe, comment_count, favorite_count in rows:
         # 解析多图
-        imgs = []
-        if work.images:
-            try:
-                imgs = json.loads(work.images)
-            except:
-                imgs = []
+        imgs = parse_image_list(work.images)
         if not imgs and work.image:
             imgs = [work.image]
         result.append({
@@ -480,7 +471,7 @@ def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
     if not user_id or work.user_id != user_id:
         raise HTTPException(status_code=403, detail="无权编辑")
 
-    image = (data.get("image") or "").strip()
+    image = normalize_image_url(data.get("image"))
     recipe_id = data.get("recipe_id") or None
     description = data.get("description", "")
     body_material = data.get("body_material", "")
@@ -492,14 +483,7 @@ def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
     curve_id = data.get("curve_id") or None
 
     # 处理多图
-    images_raw = data.get("images") or []
-    if isinstance(images_raw, str):
-        try:
-            images_raw = json.loads(images_raw)
-        except:
-            images_raw = []
-    if not isinstance(images_raw, list):
-        images_raw = [image] if image else []
+    images_raw = parse_image_list(data.get("images"))
     if image and image not in images_raw:
         images_raw.insert(0, image)
 
@@ -541,7 +525,7 @@ def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
         glaze_colors_json = json.dumps(colors_data, ensure_ascii=False)
 
     work.image = image
-    work.images = json.dumps(images_raw, ensure_ascii=False)
+    work.images = serialize_image_list(images_raw)
     work.description = description
     work.body_material = body_material
     work.kiln_type = kiln_type
@@ -571,7 +555,7 @@ def create_work(
     db: Session = Depends(get_db),
 ):
     """发布作品"""
-    image = (data.get("image") or "").strip()
+    image = normalize_image_url(data.get("image"))
     user_id = data.get("user_id", 0)
     recipe_id = data.get("recipe_id") or None
     description = data.get("description", "")
@@ -596,14 +580,7 @@ def create_work(
     consume_quota(db, user, "work")
 
     # 处理多图
-    images_raw = data.get("images") or []
-    if isinstance(images_raw, str):
-        try:
-            images_raw = json.loads(images_raw)
-        except:
-            images_raw = []
-    if not isinstance(images_raw, list):
-        images_raw = [image] if image else []
+    images_raw = parse_image_list(data.get("images"))
     if image and image not in images_raw:
         images_raw.insert(0, image)
 
@@ -649,7 +626,7 @@ def create_work(
         user_id=user_id,
         recipe_id=recipe_id,
         image=image,
-        images=json.dumps(images_raw, ensure_ascii=False),
+        images=serialize_image_list(images_raw),
         description=description,
         body_material=body_material,
         kiln_type=kiln_type,
@@ -749,12 +726,7 @@ def get_work(work_id: int, current_user_id: int = 0, db: Session = Depends(get_d
 
     work, user, recipe, curve = row
     # 解析多图
-    imgs = []
-    if work.images:
-        try:
-            imgs = json.loads(work.images)
-        except:
-            imgs = []
+    imgs = parse_image_list(work.images)
     if not imgs and work.image:
         imgs = [work.image]
     favorite_count = db.query(Favorite).filter(Favorite.work_id == work.id).count()
@@ -777,7 +749,7 @@ def get_work(work_id: int, current_user_id: int = 0, db: Session = Depends(get_d
         "avatar": user.avatar if user else "",
         "recipe_id": work.recipe_id,
         "recipe_title": recipe.title if recipe else "",
-        "recipe_cover": recipe.cover if recipe else "",
+        "recipe_cover": normalize_image_url(recipe.cover) if recipe else "",
         "image": _image_url(work.image),
         "images": [_image_url(u) for u in imgs if u],
         "description": work.description or "",

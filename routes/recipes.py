@@ -1,14 +1,15 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import Recipe, User, UserLevel, Purchase, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion
+from models import Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion
 from schemas import (
     RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
-    PurchaseCreate, PurchaseOut, ReviewCreate, ReviewOut,
+    ReviewCreate, ReviewOut,
 )
 from security import encrypt, decrypt, hash_for_lookup
+from image_utils import normalize_image_url, parse_image_list, serialize_image_list
 from auth_utils import user_id_from_request
-from sqlalchemy import text, func
+from sqlalchemy import func
 from seger_calculator import calculate_seger
 from services.recipe_version import snapshot_recipe
 import json
@@ -60,7 +61,7 @@ def init_recipe_sequence(db: Session = Depends(get_db)):
 
 def _public_recipe_query(db: Session):
     return db.query(Recipe).filter(
-        Recipe.visibility.in_(["public", "paid", "showoff"])
+        Recipe.visibility.in_(["public", "showoff"])
     )
 
 
@@ -161,16 +162,8 @@ def _recipe_rows_with_work_counts(query):
 
 def _first_work_image(work_image: str, work_images_json: str) -> str:
     """从作品字段中提取第一张图片URL"""
-    # 优先从 images JSON 数组取第一张
-    if work_images_json and work_images_json != "[]":
-        try:
-            arr = json.loads(work_images_json)
-            if arr and isinstance(arr, list) and arr[0]:
-                return arr[0]
-        except Exception:
-            pass
-    # fallback 到 image 主图
-    return work_image or ""
+    images = parse_image_list(work_images_json)
+    return images[0] if images else normalize_image_url(work_image)
 
 
 def _serialize_recipe_list_item(recipe, nickname, avatar, work_count=0, work_image="", work_images="", favorite_count=0):
@@ -194,7 +187,7 @@ def recipe_search_config(db: Session = Depends(get_db)):
     material_names = [r[0] for r in rows]
 
     # 筛选项 — 从 Recipe 表取实际数据去重，确保能搜到结果
-    _VISIBLE = ["public", "paid", "showoff"]
+    _VISIBLE = ["public", "showoff"]
     kiln_types = [r[0] for r in db.query(Recipe.kiln_type).filter(
         Recipe.kiln_type != "", Recipe.kiln_type.isnot(None),
         Recipe.visibility.in_(_VISIBLE)
@@ -231,7 +224,7 @@ def count_recipes(
     type: str = "",
     category: str = "",
     keyword: str = "",
-    seller_id: int = 0,
+    author_id: int = 0,
     material: str = "",
     materials: str = "",
     has_work: str = "",
@@ -248,8 +241,8 @@ def count_recipes(
         query = query.filter(Recipe.type == type)
     if category:
         query = query.filter(Recipe.category == category)
-    if seller_id > 0:
-        query = query.filter(Recipe.user_id == seller_id)
+    if author_id > 0:
+        query = query.filter(Recipe.user_id == author_id)
     if keyword:
         query = query.filter(
             Recipe.title.contains(keyword)
@@ -288,7 +281,7 @@ def list_recipes(
     type: str = "",
     category: str = "",
     keyword: str = "",
-    seller_id: int = 0,
+    author_id: int = 0,
     material: str = "",
     materials: str = "",
     has_work: str = "",
@@ -309,8 +302,8 @@ def list_recipes(
         query = query.filter(Recipe.type == type)
     if category:
         query = query.filter(Recipe.category == category)
-    if seller_id > 0:
-        query = query.filter(Recipe.user_id == seller_id)
+    if author_id > 0:
+        query = query.filter(Recipe.user_id == author_id)
     if keyword:
         query = query.filter(
             Recipe.title.contains(keyword)
@@ -378,7 +371,7 @@ def following_recipes(
 
     query = db.query(Recipe).filter(
         Recipe.user_id.in_(followed_ids),
-        Recipe.visibility.in_(["public", "paid", "showoff"]),
+        Recipe.visibility.in_(["public", "showoff"]),
     )
     # favorite count subquery
     fav_counts = (
@@ -453,19 +446,6 @@ def my_recipes(user_id: int = Query(...), db: Session = Depends(get_db)):
     for r in recipes:
         setattr(r, 'author_name', myname)
         setattr(r, 'favorite_count', fav_map.get(r.id, 0))
-    return recipes
-
-
-# ========= 已购 =========
-
-@router.get("/purchased", response_model=list[RecipeOut])
-def purchased_recipes(user_id: int = Query(...), db: Session = Depends(get_db)):
-    purchases = db.query(Purchase).filter(
-        Purchase.buyer_id == user_id,
-        Purchase.status.in_(["confirmed", "pending"]),
-    ).all()
-    recipe_ids = [p.recipe_id for p in purchases]
-    recipes = db.query(Recipe).filter(Recipe.id.in_(recipe_ids)).all()
     return recipes
 
 
@@ -564,9 +544,8 @@ def favorite_recipes(
                     "title": recipe.title,
                     "recipe_no": recipe.recipe_no or '',
                     "category": recipe.category or '',
-                    "cover": recipe.cover or (json.loads(recipe.images or '[]')[0] if recipe.images and recipe.images != '[]' else ''),
+                    "cover": normalize_image_url(recipe.cover) or (parse_image_list(recipe.images) or [""])[0],
                     "author_name": user.nickname if user else '',
-                    "price": recipe.price,
                     "created_at": recipe.created_at.isoformat() if recipe.created_at else '',
                 })
         if f.work_id:
@@ -579,7 +558,7 @@ def favorite_recipes(
                     "user_id": work.user_id,
                     "type": "work",
                     "title": (work.description or '作品').split('\n')[0][:30],
-                    "cover": work.image or '',
+                    "cover": normalize_image_url(work.image),
                     "author_name": user.nickname if user else '',
                     "body_material": work.body_material or '',
                     "created_at": work.created_at.isoformat() if work.created_at else '',
@@ -634,7 +613,7 @@ def search(
     logger.info(f"SEARCH: keyword={repr(keyword)}, page={page}, page_size={page_size}")
     # 1. 搜索配方
     recipe_query = db.query(Recipe).filter(
-        Recipe.visibility.in_(["public", "paid", "showoff"])
+        Recipe.visibility.in_(["public", "showoff"])
     )
     if keyword:
         recipe_query = recipe_query.filter(
@@ -747,7 +726,7 @@ def get_recipe(
         raise HTTPException(status_code=401, detail="请先登录")
 
     # 私密配方：只有作者可看
-    if recipe.visibility == "private" and recipe.user_id != current_user_id:
+    if recipe.visibility not in ("public", "showoff") and recipe.user_id != current_user_id:
         raise HTTPException(status_code=404, detail="不存在")
 
     from services.user_quota import consume_recipe_view_once
@@ -758,18 +737,6 @@ def get_recipe(
     if recipe.user_id != current_user_id:
         consume_recipe_view_once(db, user, recipe_id)
         db.commit()
-
-    # 付费/显摆模式：隐藏原料和步骤
-    recipe.is_purchased = False
-    if recipe.type == "recipe" and recipe.visibility in ("paid", "showoff") and recipe.user_id != current_user_id:
-        if current_user_id > 0:
-            purchase = db.query(Purchase).filter(
-                Purchase.recipe_id == recipe_id,
-                Purchase.buyer_id == current_user_id,
-                Purchase.status == "confirmed",
-            ).first()
-            if purchase:
-                recipe.is_purchased = True
 
     # 收藏状态
     recipe.is_favorited = False
@@ -1014,7 +981,7 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         raise HTTPException(status_code=404, detail="用户不存在")
 
     from services.user_quota import consume_quota
-    consume_quota(db, user, "paid_recipe" if (recipe.price or 0) > 0 else "free_recipe")
+    consume_quota(db, user, "recipe")
 
     # 处理釉色数据
     glaze_colors_json = "[]"
@@ -1038,13 +1005,20 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         except (json.JSONDecodeError, TypeError):
             glaze_colors_json = recipe.glaze_colors
 
+    cover = normalize_image_url(recipe.cover)
+    images = parse_image_list(recipe.images)
+    if cover and cover not in images:
+        images.insert(0, cover)
+    if not cover and images:
+        cover = images[0]
+
     db_recipe = Recipe(
         user_id=user_id,
         title=recipe.title,
         recipe_no=generate_recipe_no(db),
         type=recipe.type,
-        cover=recipe.cover,
-        images=recipe.images,
+        cover=cover,
+        images=serialize_image_list(images),
         describe=recipe.describe,
         category=recipe.category,
         temperature=recipe.temperature,
@@ -1054,11 +1028,9 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         body_material=recipe.body_material,
         surface=recipe.surface,
         transparency=recipe.transparency,
-        price=recipe.price,
         turnaround=recipe.turnaround,
-        reward=recipe.reward,
         contact=recipe.contact,
-        visibility=recipe.visibility,
+        visibility=recipe.visibility if recipe.visibility in ("public", "private", "showoff") else "private",
         forked_from=recipe.forked_from,
         glaze_colors=glaze_colors_json,
     )
@@ -1096,10 +1068,17 @@ def update_recipe(
     snapshot_recipe(recipe_id, db, note="编辑配方信息", user_id=user_id)
 
     update_data = recipe.model_dump(exclude_unset=True)
-    if (db_recipe.price or 0) <= 0 and (update_data.get("price") or 0) > 0:
-        from services.user_quota import consume_quota
-        user = db.query(User).filter(User.id == user_id).first()
-        consume_quota(db, user, "paid_recipe")
+    if "cover" in update_data or "images" in update_data:
+        cover = normalize_image_url(update_data.get("cover", db_recipe.cover))
+        images = parse_image_list(update_data.get("images", db_recipe.images))
+        if cover and cover not in images:
+            images.insert(0, cover)
+        if not cover and images:
+            cover = images[0]
+        update_data["cover"] = cover
+        update_data["images"] = serialize_image_list(images)
+    if update_data.get("visibility") not in (None, "public", "private", "showoff"):
+        raise HTTPException(status_code=400, detail="不支持的可见范围")
 
     # 处理釉色数据
     if "glaze_colors" in update_data and update_data["glaze_colors"]:
@@ -1147,98 +1126,10 @@ def delete_recipe(recipe_id: int, user_id: int = Query(...), db: Session = Depen
     return {"message": "已删除"}
 
 
-# ========= 购买 =========
-
-@router.post("/buy", response_model=PurchaseOut)
-def buy_recipe(body: PurchaseCreate, buyer_id: int = Query(...), db: Session = Depends(get_db)):
-    recipe = db.query(Recipe).filter(Recipe.id == body.recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="不存在")
-    if recipe.user_id == buyer_id:
-        raise HTTPException(status_code=400, detail="不能购买自己的")
-
-    existing = db.query(Purchase).filter(
-        Purchase.recipe_id == body.recipe_id,
-        Purchase.buyer_id == buyer_id,
-        Purchase.status == "confirmed",
-    ).first()
-    if existing:
-        raise HTTPException(status_code=400, detail="已购买过")
-
-    amount = recipe.price or recipe.reward or 0
-    if amount <= 0:
-        raise HTTPException(status_code=400, detail="免费配方无需购买")
-
-    buyer = db.query(User).filter(User.id == buyer_id).first()
-    if not buyer or (buyer.balance or 0) < amount:
-        raise HTTPException(status_code=400, detail=f"余额不足，需要 {amount} 币，当前 {(buyer.balance or 0)} 币")
-
-    purchase = Purchase(
-        recipe_id=body.recipe_id,
-        buyer_id=buyer_id,
-        seller_id=recipe.user_id,
-        amount=amount,
-        status="confirmed",
-    )
-    db.add(purchase)
-
-    # 扣买家余额
-    buyer.balance = (buyer.balance or 0) - amount
-
-    # 加卖家余额
-    seller = db.query(User).filter(User.id == recipe.user_id).first()
-    seller.balance = (seller.balance or 0) + amount
-
-    recipe.sold_count = (recipe.sold_count or 0) + 1
-    db.commit()
-    db.refresh(purchase)
-    return purchase
-
-
-# ========= 购买记录（用于评价） =========
-
-@router.get("/{recipe_id}/purchase")
-def get_purchase(recipe_id: int, user_id: int = Query(...), db: Session = Depends(get_db)):
-    """查当前用户是否购买过此配方"""
-    purchase = db.query(Purchase).filter(
-        Purchase.recipe_id == recipe_id,
-        Purchase.buyer_id == user_id,
-        Purchase.status == "confirmed",
-    ).first()
-    if not purchase:
-        # 没购买也查一下是否已评价（防止重复评价）
-        review = db.query(Review).filter(
-            Review.recipe_id == recipe_id,
-            Review.user_id == user_id,
-        ).first()
-        return {
-            "purchased": False,
-            "reviewed": review is not None,
-        }
-    # 检查是否已评价
-    review = db.query(Review).filter(
-        Review.purchase_id == purchase.id,
-    ).first()
-    return {
-        "purchased": True,
-        "purchase_id": purchase.id,
-        "reviewed": review is not None,
-    }
-
-
 # ========= 评价 =========
 
 @router.post("/review")
 def create_review(body: ReviewCreate, user_id: int = Query(...), db: Session = Depends(get_db)):
-    # 如果绑定了购买记录，验证属于该用户
-    if body.purchase_id:
-        purchase = db.query(Purchase).filter(
-            Purchase.id == body.purchase_id,
-            Purchase.buyer_id == user_id,
-        ).first()
-        if not purchase:
-            raise HTTPException(status_code=404, detail="购买记录不存在")
-
     # 如果是回复，验证父评论存在
     parent = None
     if body.parent_id:
@@ -1249,7 +1140,6 @@ def create_review(body: ReviewCreate, user_id: int = Query(...), db: Session = D
             raise HTTPException(status_code=400, detail="不能回复其他配方的评论")
 
     review = Review(
-        purchase_id=body.purchase_id if body.purchase_id > 0 else None,
         parent_id=body.parent_id if body.parent_id > 0 else None,
         recipe_id=body.recipe_id,
         user_id=user_id,

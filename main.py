@@ -1,5 +1,6 @@
 import json
 import logging
+from logging.handlers import TimedRotatingFileHandler
 import os
 import sys
 import time
@@ -14,21 +15,29 @@ from starlette.types import Receive, Scope, Send
 
 sys.path.insert(0, os.path.dirname(__file__))
 
-from app_config import ALLOW_DEV_CORS, CORS_ORIGINS, ADMIN_ALLOWED_IPS, MAX_PAGE_SIZE
+from app_config import (
+    ALLOW_DEV_CORS,
+    CORS_ORIGINS,
+    ADMIN_ALLOWED_IPS,
+    IS_PRODUCTION,
+    LOCAL_UPLOAD_DIR,
+    LOG_DIR,
+    LOG_LEVEL,
+    LOG_TO_FILE,
+    MAX_PAGE_SIZE,
+)
 from auth_utils import user_id_from_request
+from image_utils import normalize_image_url, parse_image_list
 from rate_limiter import RateLimiter
 from routes import (
     admin,
     auth,
-    ceramic_materials,
     complaints,
     curves,
-    glazy_materials,
     glossary,
     materials,
     notifications,
     ocr,
-    pay,
     recipe_ingredients,
     recipes,
     redeem,
@@ -37,24 +46,24 @@ from routes import (
     temperature_cones,
     upload,
     users,
-    wallet,
     work_comments,
     works,
 )
 
-app = FastAPI(title="Yunyao App API", version="0.2.0")
+app = FastAPI(
+    title="Yunyao App API",
+    version="0.2.0",
+    docs_url=None if IS_PRODUCTION else "/docs",
+    redoc_url=None if IS_PRODUCTION else "/redoc",
+    openapi_url=None if IS_PRODUCTION else "/openapi.json",
+)
 
 
 @app.on_event("startup")
 def startup_downgrade():
     """启动时补跑日切维护，并在每天 0 点刷新等级与额度。"""
-    from database import Base, SessionLocal, engine
-    from models import UserDailyRecipeView, UserUsageQuota
+    from database import SessionLocal
     from services.user_quota import ensure_system_levels, run_daily_maintenance
-
-    # 仅创建本功能新增表；已有表结构仍由正式迁移管理。
-    UserUsageQuota.__table__.create(bind=engine, checkfirst=True)
-    UserDailyRecipeView.__table__.create(bind=engine, checkfirst=True)
 
     # 启动时执行一次
     try:
@@ -93,13 +102,22 @@ def startup_downgrade():
     logger.info("[每日维护] 定时任务已启动，每晚 0:00 执行")
 
 
-# ===== 日志配置 =====
-LOG_FILE = os.path.join(os.path.dirname(__file__), "logs", "server.log")
+# ===== 日志配置：容器默认输出 stdout，本地可按天滚动文件 =====
+log_handlers: list[logging.Handler] = [logging.StreamHandler()]
+if LOG_TO_FILE:
+    os.makedirs(LOG_DIR, exist_ok=True)
+    log_handlers.append(TimedRotatingFileHandler(
+        os.path.join(LOG_DIR, "server.log"),
+        when="midnight",
+        backupCount=14,
+        encoding="utf-8",
+    ))
 logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%H:%M:%S",
-    handlers=[logging.FileHandler(LOG_FILE, encoding="utf-8", mode="a"), logging.StreamHandler()],
+    level=getattr(logging, LOG_LEVEL, logging.INFO),
+    format="%(asctime)s [%(levelname)s] %(name)s %(message)s",
+    datefmt="%Y-%m-%dT%H:%M:%S%z",
+    handlers=log_handlers,
+    force=True,
 )
 logger = logging.getLogger("yunyao")
 logger.info("=== 服务启动 ===")
@@ -111,9 +129,21 @@ app.add_middleware(
     CORSMiddleware,
     allow_origins=CORS_ORIGINS or (["*"] if ALLOW_DEV_CORS else []),
     allow_credentials=False,
-    allow_methods=["*"],
-    allow_headers=["*"],
+    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_headers=["Authorization", "Content-Type", "X-User-Id"],
 )
+
+
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["X-Content-Type-Options"] = "nosniff"
+    response.headers["X-Frame-Options"] = "DENY"
+    response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+    response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
+    if IS_PRODUCTION:
+        response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
+    return response
 
 
 @app.middleware("http")
@@ -164,19 +194,25 @@ async def cap_page_size(request: Request, call_next):
     return await call_next(request)
 
 
-def _requires_auth(path: str, method: str) -> bool:
-    if path in ("/auth/login", "/auth/register", "/auth/mp-login", "/auth/send-code", "/auth/captcha", "/auth/find-user", "/auth/verify-code", "/auth/reset-password", "/upload/image"):
+def _requires_auth(request: Request) -> bool:
+    path = request.url.path
+    method = request.method
+    if path in ("/auth/login", "/auth/register", "/auth/send-code", "/auth/captcha", "/auth/find-user", "/auth/verify-code", "/auth/reset-password"):
         return False
     if path.startswith(("/admin", "/admin-panel", "/docs", "/openapi.json", "/uploads")):
         return False
-    if path in ("/users/publish-status", "/users/view-status"):
-        return False
-    if path.startswith(('/wallet', '/materials', '/settings', '/users', '/social', '/notifications', '/complaints', '/upload', '/curves')):
+    if path == "/users/publish-status":
+        return bool(request.query_params.get("user_id"))
+    if path == "/users/view-status":
+        return True
+    if path.startswith(('/materials', '/settings', '/users', '/social', '/notifications', '/complaints', '/upload', '/curves')):
         # curves: GET 查询公开
         if path.startswith('/curves') and method == 'GET':
             return False
         # materials: GET 列表公开（POST/PUT/DELETE 需登录）
         if path.startswith("/materials/body") and method == "GET":
+            return False
+        if path.startswith("/materials/catalog") and method == "GET":
             return False
         # substitutions 查询公开
         if path.endswith("/substitutions") and method == "GET":
@@ -200,7 +236,7 @@ def _requires_auth(path: str, method: str) -> bool:
 
 @app.middleware("http")
 async def require_signed_user_token(request: Request, call_next):
-    if request.method == "OPTIONS" or not _requires_auth(request.url.path, request.method):
+    if request.method == "OPTIONS" or not _requires_auth(request):
         return await call_next(request)
 
     try:
@@ -209,12 +245,24 @@ async def require_signed_user_token(request: Request, call_next):
             raise HTTPException(status_code=401, detail="Authentication required")
 
         claimed_ids: list[int] = []
-        for key in ("user_id", "buyer_id", "current_user_id"):
+        for key in ("user_id", "current_user_id"):
             if request.method == "GET" and request.url.path == "/users/profile" and key == "user_id":
                 continue
             value = request.query_params.get(key)
             if value:
                 claimed_ids.append(int(value))
+
+        content_type = request.headers.get("content-type", "").lower()
+        if request.method in ("POST", "PUT", "PATCH", "DELETE") and "application/json" in content_type:
+            try:
+                body = await request.json()
+            except (json.JSONDecodeError, UnicodeDecodeError):
+                body = None
+            if isinstance(body, dict):
+                for key in ("user_id", "current_user_id"):
+                    value = body.get(key)
+                    if value not in (None, "", 0, "0"):
+                        claimed_ids.append(int(value))
 
         if any(claimed_id != token_user_id for claimed_id in claimed_ids):
             raise HTTPException(status_code=403, detail="User id does not match token")
@@ -226,14 +274,12 @@ async def require_signed_user_token(request: Request, call_next):
             json.dumps({"detail": exc.detail}, ensure_ascii=False),
             status_code=exc.status_code,
             media_type="application/json",
-            headers={"Access-Control-Allow-Origin": "*"},
         )
     except ValueError:
         return Response(
             json.dumps({"detail": "Invalid user id"}, ensure_ascii=False),
             status_code=400,
             media_type="application/json",
-            headers={"Access-Control-Allow-Origin": "*"},
         )
 
 
@@ -241,8 +287,6 @@ app.include_router(recipe_ingredients.router)
 app.include_router(recipes.router)
 app.include_router(redeem.router)
 app.include_router(auth.router)
-app.include_router(pay.router)
-app.include_router(wallet.router)
 app.include_router(materials.router)
 app.include_router(curves.router)
 app.include_router(social.router)
@@ -251,8 +295,6 @@ app.include_router(upload.router)
 app.include_router(ocr.router)
 app.include_router(work_comments.router)
 app.include_router(glossary.router)
-app.include_router(ceramic_materials.router)
-app.include_router(glazy_materials.router)
 app.include_router(temperature_cones.router)
 app.include_router(complaints.router)
 app.include_router(notifications.router)
@@ -281,19 +323,9 @@ static_dir = os.path.join(os.path.dirname(__file__), "static")
 if os.path.exists(static_dir):
     app.mount("/static", StaticFiles(directory=static_dir), name="static")
 
-uploads_dir = os.path.join(os.path.dirname(__file__), "uploads")
+uploads_dir = LOCAL_UPLOAD_DIR
 os.makedirs(uploads_dir, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
-
-# 图片代理路由：绕过 mount 不走 CORS 的问题
-@app.get("/api/uploads/{path:path}")
-async def proxy_upload(path: str):
-    import ntpath
-    safe = ntpath.normpath(path).lstrip("\\/")
-    file_path = os.path.join(uploads_dir, safe)
-    if os.path.abspath(file_path).startswith(os.path.abspath(uploads_dir)) and os.path.isfile(file_path):
-        return FileResponse(file_path)
-    raise HTTPException(404)
 
 
 # ===== 统一收藏列表（配方 + 作品）=====
@@ -358,8 +390,7 @@ def get_all_favorites(
             "recipe_no": recipe.recipe_no or "",
             "author_name": user.nickname or user.username or "未知",
             "author_id": user.id,
-            "cover": recipe.cover or "",
-            "price": recipe.price or 0,
+            "cover": normalize_image_url(recipe.cover),
             "category": recipe.category or "",
             "favorited_at": fav.created_at.isoformat() if fav.created_at else "",
         })
@@ -370,8 +401,7 @@ def get_all_favorites(
             "title": work.description or "烧制作品",
             "author_name": user.nickname or user.username or "未知",
             "author_id": user.id,
-            "cover": (work.images or [""])[0] if work.images else work.cover or "",
-            "price": 0,
+            "cover": (parse_image_list(work.images) or [normalize_image_url(work.image)])[0],
             "category": work.body_material or "",
             "favorited_at": fav.created_at.isoformat() if fav.created_at else "",
         })
@@ -392,6 +422,27 @@ def get_all_favorites(
 @app.get("/")
 def root():
     return {"status": "running"}
+
+
+@app.get("/health/live", include_in_schema=False)
+def health_live():
+    return {"status": "ok"}
+
+
+@app.get("/health/ready", include_in_schema=False)
+def health_ready():
+    from sqlalchemy import text
+    from database import engine
+    from storage import storage_healthcheck
+
+    try:
+        with engine.connect() as conn:
+            conn.execute(text("SELECT 1"))
+        storage_healthcheck()
+    except Exception as exc:
+        logger.error("readiness check failed: %s", exc)
+        raise HTTPException(status_code=503, detail="service not ready") from exc
+    return {"status": "ready"}
 
 
 @app.get("/admin-panel")

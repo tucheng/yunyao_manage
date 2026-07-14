@@ -1,10 +1,10 @@
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query
-from sqlalchemy import func
+from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 from database import get_db
-from models import UserMaterial
+from models import Material, UserMaterial
 
 router = APIRouter(prefix="/materials", tags=["材料库"])
 
@@ -72,6 +72,85 @@ def _put_material_in_status(db: Session, user_id: int, name: str, status: str, d
     )
     db.add(item)
     return item, True
+
+
+def _catalog_payload(material: Material) -> dict:
+    return {
+        "id": material.id,
+        "name": material.name,
+        "name_en": material.name_en or "",
+        "source": material.source or "",
+        "source_id": material.source_id,
+        "formula": material.formula or "",
+        "molecular_weight": material.molecular_weight or "",
+        "category": material.category or "",
+        "is_analysis": bool(material.is_analysis),
+        "is_primitive": bool(material.is_primitive),
+        "sio2": material.sio2,
+        "al2o3": material.al2o3,
+        "fe2o3": material.fe2o3,
+        "tio2": material.tio2,
+        "cao": material.cao,
+        "mgo": material.mgo,
+        "na2o": material.na2o,
+        "k2o": material.k2o,
+        "zno": material.zno,
+        "b2o3": material.b2o3,
+        "p2o5": material.p2o5,
+        "li2o": material.li2o,
+        "mno2": material.mno2,
+        "coo": material.coo,
+        "sno2": material.sno2,
+        "cuo": material.cuo,
+        "cr2o3": material.cr2o3,
+        "pbo": material.pbo,
+        "bao": material.bao,
+        "sro": material.sro,
+        "loi": material.loi,
+        "thermal_expansion": material.thermal_expansion,
+    }
+
+
+@router.get("/catalog")
+def list_material_catalog(
+    q: str = Query("", description="搜索中文名、英文名或分子式"),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=500),
+    db: Session = Depends(get_db),
+):
+    """从合并后的 materials 表查询统一原材料目录。"""
+    query = db.query(Material)
+    if q:
+        keyword = f"%{q}%"
+        query = query.filter(
+            or_(
+                Material.name.ilike(keyword),
+                Material.name_en.ilike(keyword),
+                Material.formula.ilike(keyword),
+            )
+        )
+    total = query.count()
+    source_order = case((Material.source == "local", 0), else_=1)
+    items = (
+        query.order_by(source_order, Material.sort_order, Material.name)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {
+        "items": [_catalog_payload(item) for item in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get("/catalog/{material_id}")
+def get_material_catalog_item(material_id: int, db: Session = Depends(get_db)):
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="材料不存在")
+    return _catalog_payload(material)
 
 
 @router.get("")

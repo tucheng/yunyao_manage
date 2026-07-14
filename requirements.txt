@@ -6,4 +6,6 @@ python-multipart==0.0.12
 cryptography==44.0.0
 requests==2.32.3
 pymysql==1.2.0
-Pillow
+Pillow==12.2.0
+alembic==1.14.1
+boto3==1.35.99

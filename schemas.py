@@ -17,9 +17,7 @@ class RecipeCreate(BaseModel):
     body_material: str = ""
     surface: str = ""
     transparency: str = ""
-    price: int = 0
     turnaround: str = ""
-    reward: int = 0
     contact: str = ""
     visibility: str = "private"
     work_id: int = 0
@@ -41,9 +39,7 @@ class RecipeUpdate(BaseModel):
     body_material: Optional[str] = None
     surface: Optional[str] = None
     transparency: Optional[str] = None
-    price: Optional[int] = None
     turnaround: Optional[str] = None
-    reward: Optional[int] = None
     contact: Optional[str] = None
     visibility: Optional[str] = None
     forked_from: Optional[int] = None
@@ -66,17 +62,13 @@ class RecipeOut(BaseModel):
     body_material: Optional[str] = ""
     surface: Optional[str] = ""
     transparency: Optional[str] = ""
-    price: Optional[int] = 0
     turnaround: Optional[str] = ""
-    reward: Optional[int] = 0
     contact: Optional[str] = ""
     visibility: Optional[str] = "private"
     likes: Optional[int] = 0
-    sold_count: Optional[int] = 0
     created_at: Optional[datetime] = None
     updated_at: Optional[datetime] = None
     is_favorited: bool = False
-    is_purchased: bool = False
     forked_from: Optional[int] = None
     source: Optional[str] = ""
     source_id: Optional[str] = ""
@@ -104,11 +96,8 @@ class RecipeListItem(BaseModel):
     atmosphere: Optional[str] = ""
     kiln_type: Optional[str] = ""
     body_material: Optional[str] = ""
-    price: Optional[int] = 0
-    reward: Optional[int] = 0
     visibility: Optional[str] = "private"
     likes: Optional[int] = 0
-    sold_count: Optional[int] = 0
     author_name: str = ""
     recipe_no: Optional[str] = ""
     avatar: str = ""
@@ -126,24 +115,7 @@ class LoginRequest(BaseModel):
     code: str
 
 
-class PurchaseCreate(BaseModel):
-    recipe_id: int
-
-
-class PurchaseOut(BaseModel):
-    id: int
-    recipe_id: int
-    buyer_id: int
-    seller_id: int
-    amount: int
-    status: str
-    created_at: datetime
-
-    model_config = {"from_attributes": True}
-
-
 class ReviewCreate(BaseModel):
-    purchase_id: int = 0
     recipe_id: int
     parent_id: int = 0
     rating: int = 5

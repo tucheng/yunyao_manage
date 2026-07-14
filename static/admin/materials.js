@@ -25,12 +25,12 @@ window.loadMaterials = function() {
       tbody.innerHTML = '<tr><td colspan="5" style="text-align:center;color:#999;padding:30px">暂无材料数据</td></tr>';
     } else {
       tbody.innerHTML = list.map(function(m) {
-        var srcLabel = m.source === 'local' ? '国产' : m.source === 'glazy' ? '海外' : (m.source || '-');
+        var srcLabel = m.source === 'local' ? '国产' : '海外';
         return '<tr>' +
           '<td>' + m.id + '</td>' +
           '<td><strong>' + esc(m.name) + '</strong>' + (m.name_en ? '<br><small style="color:#999">' + esc(m.name_en) + '</small>' : '') + '</td>' +
           '<td style="font-size:12px;color:#666;max-width:160px;overflow:hidden;text-overflow:ellipsis">' + esc(m.formula || '-') + '</td>' +
-          '<td><span class="badge ' + (m.source === 'local' ? 'badge-free' : 'badge-paid') + '">' + srcLabel + '</span></td>' +
+          '<td><span class="badge ' + (m.source === 'local' ? 'badge-neutral' : 'badge-overseas') + '">' + srcLabel + '</span></td>' +
           '<td><button class="btn btn-sm" onclick="window.showSubstitutions(' + m.id + ')">相似品</button> ' +
           '<button class="btn btn-sm btn-primary" onclick="window.showMaterialDetail(' + m.id + ')" style="margin-left:4px">详情</button></td>' +
           '</tr>';

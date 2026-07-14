@@ -67,8 +67,8 @@ tr:hover { background: #fafafa; }
 .btn:disabled { opacity: .5; cursor: not-allowed; }
 .badge { display: inline-block; padding: 2px 8px; border-radius: 4px; font-size: 12px; }
 .badge-admin { background: #2c3e50; color: #fff; }
-.badge-free { background: #e8e4df; color: #555; }
-.badge-paid { background: #f39c12; color: #fff; }
+.badge-neutral { background: #e8e4df; color: #555; }
+.badge-overseas { background: #f39c12; color: #fff; }
 .tag-muted { font-size: 13px; color: #e74c3c; }
 .help { font-size: 12px; color: #999; margin-top: 3px; line-height: 1.5; }
 .settings-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; }
@@ -139,7 +139,6 @@ tr:hover { background: #fafafa; }
         <button class="menu-cat-btn" data-menu="sys" onclick="toggleCatMenu('sys')">系统设置 ▾</button>
         <div class="cat-dropdown" id="cat-sys">
           <a onclick="switchTab('verification')">验证码配置</a>
-          <a onclick="switchTab('system')">系统设置</a>
         </div>
       </div>
     </div>
@@ -152,7 +151,8 @@ tr:hover { background: #fafafa; }
 <div class="toast" id="toast"></div>
 
 <script>
-let TOKEN = localStorage.getItem('admin_token') || '';
+let TOKEN = sessionStorage.getItem('admin_token') || '';
+localStorage.removeItem('admin_token');
 
 function doLogin() {
   const username = document.getElementById('usernameInput').value.trim();
@@ -164,10 +164,10 @@ function doLogin() {
     .then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.detail || '登录失败'); }); return r.json(); })
     .then(d => {
       TOKEN = d.token;
-      localStorage.setItem('admin_token', TOKEN);
+      sessionStorage.setItem('admin_token', TOKEN);
       showApp();
     })
-    .catch(e => { TOKEN = ''; localStorage.removeItem('admin_token'); errEl.textContent = e.message; errEl.style.display = 'block'; });
+    .catch(e => { TOKEN = ''; sessionStorage.removeItem('admin_token'); errEl.textContent = e.message; errEl.style.display = 'block'; });
 }
 
 function showApp() {
@@ -180,9 +180,9 @@ function showApp() {
 // 刷新后自动恢复登录
 if (TOKEN) {
   // 验证 token 是否有效
-  fetch('/admin/stats?token=' + encodeURIComponent(TOKEN))
-    .then(r => { if (r.ok) { showApp(); } else { TOKEN = ''; localStorage.removeItem('admin_token'); } })
-    .catch(() => { TOKEN = ''; localStorage.removeItem('admin_token'); });
+  fetch('/admin/stats', { headers: { Authorization: 'Bearer ' + TOKEN } })
+    .then(r => { if (r.ok) { showApp(); } else { TOKEN = ''; sessionStorage.removeItem('admin_token'); } })
+    .catch(() => { TOKEN = ''; sessionStorage.removeItem('admin_token'); });
 }
 
 function toast(msg, type='success') {
@@ -192,8 +192,7 @@ function toast(msg, type='success') {
 }
 
 function api(path, opts={}) {
-  const url = path + (path.includes('?') ? '&' : '?') + 'token=' + encodeURIComponent(TOKEN);
-  return fetch(url, { ...opts, headers: { 'Content-Type': 'application/json', ...opts.headers } })
+  return fetch(path, { ...opts, headers: { 'Content-Type': 'application/json', Authorization: 'Bearer ' + TOKEN, ...opts.headers } })
     .then(r => { if (!r.ok) return r.json().then(e => { throw new Error(e.detail || '请求失败'); }); return r.json(); });
 }
 

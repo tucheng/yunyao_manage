@@ -4,7 +4,6 @@ window.loadStats = function() {
     var items = [
       { key: 'user_count', label: '总用户' },
       { key: 'recipe_count', label: '配方总数' },
-      { key: 'paid_recipe_count', label: '付费配方' },
       { key: 'work_count', label: '作品总数' },
       { key: 'muted_count', label: '已禁言' }
     ];

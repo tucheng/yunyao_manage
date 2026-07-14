@@ -32,9 +32,8 @@ class GenerateCodesBody(BaseModel):
 
 
 @router.post("/admin/generate")
-def generate_codes(body: GenerateCodesBody, token: str = Query(...), db: Session = Depends(get_db)):
+def generate_codes(body: GenerateCodesBody, _admin=Depends(verify_admin), db: Session = Depends(get_db)):
     """管理员批量生成兑换码"""
-    verify_admin(token)
 
     if body.count < 1 or body.count > 100:
         raise HTTPException(status_code=400, detail="生成数量1-100")
@@ -57,9 +56,8 @@ def generate_codes(body: GenerateCodesBody, token: str = Query(...), db: Session
 
 @router.get("/admin/codes")
 def list_codes(page: int = 1, page_size: int = Query(default=20, alias="page_size"),
-               token: str = Query(...), db: Session = Depends(get_db)):
+               _admin=Depends(verify_admin), db: Session = Depends(get_db)):
     """管理员查看兑换码列表"""
-    verify_admin(token)
 
     qry = db.query(RedeemCode).order_by(RedeemCode.created_at.desc())
     total = qry.count()
@@ -173,8 +171,7 @@ def redeem_code(body: RedeemBody, request: Request, db: Session = Depends(get_db
         "expires_at": str(new_expires),
         "quota": {
             "quota_date": str(quota.quota_date),
-            "paid_recipe_remaining": quota.paid_recipe_remaining,
-            "free_recipe_remaining": quota.free_recipe_remaining,
+            "recipe_remaining": quota.recipe_remaining,
             "work_remaining": quota.work_remaining,
             "recipe_view_remaining": quota.recipe_view_remaining,
             "redeem_count": quota.redeem_count,

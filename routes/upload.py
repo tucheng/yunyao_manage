@@ -1,12 +1,12 @@
-import os
 import uuid
-from fastapi import APIRouter, UploadFile, File, HTTPException
+from fastapi import APIRouter, Depends, UploadFile, File, Form, HTTPException, Request
+from sqlalchemy.orm import Session
+
+from auth_utils import get_current_user
+from database import get_db
+from storage import save_object
 
 router = APIRouter(prefix="/upload", tags=["上传"])
-
-# 文件存储目录
-UPLOAD_DIR = os.path.join(os.path.dirname(os.path.dirname(__file__)), "uploads")
-os.makedirs(UPLOAD_DIR, exist_ok=True)
 
 ALLOWED_EXTENSIONS = {".jpg", ".jpeg", ".png", ".gif", ".webp"}
 ALLOWED_CONTENT_TYPES = {"image/jpeg", "image/png", "image/gif", "image/webp"}
@@ -14,9 +14,16 @@ MAX_FILE_SIZE = 10 * 1024 * 1024  # 10MB
 
 
 @router.post("/image")
-async def upload_image(file: UploadFile = File(...)):
+async def upload_image(
+    request: Request,
+    file: UploadFile = File(...),
+    kind: str = Form("misc"),
+    db: Session = Depends(get_db),
+):
     """上传图片，返回可直接访问的 URL"""
+    get_current_user(request, db)
     # 验证文件扩展名
+    import os
     ext = os.path.splitext(file.filename or "image.jpg")[1].lower()
     if ext not in ALLOWED_EXTENSIONS:
         raise HTTPException(
@@ -35,15 +42,13 @@ async def upload_image(file: UploadFile = File(...)):
         raise HTTPException(status_code=400, detail="图片内容格式不正确")
 
     # 生成唯一文件名
-    unique_name = f"{uuid.uuid4().hex}{ext}"
-    file_path = os.path.join(UPLOAD_DIR, unique_name)
-
-    with open(file_path, "wb") as f:
-        f.write(content)
-
-    # 返回可访问的 URL
-    url = f"/uploads/{unique_name}"
-    return {"url": url, "filename": unique_name}
+    folder = {"recipe": "recipes", "work": "works"}.get((kind or "").strip().lower(), "misc")
+    unique_name = f"{folder}/{uuid.uuid4().hex}{ext}"
+    try:
+        url = save_object(unique_name, content, file.content_type or "application/octet-stream")
+    except Exception as exc:
+        raise HTTPException(status_code=503, detail="文件存储暂不可用") from exc
+    return {"url": url, "filename": unique_name, "kind": kind}
 
 
 def _looks_like_image(content: bytes) -> bool:

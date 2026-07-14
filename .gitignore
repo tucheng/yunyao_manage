@@ -1,7 +1,10 @@
 __pycache__/
 *.pyc
+.venv/
+venv/
 .env
 .env.*
+!.env.prod.example
 .encryption_key
 logs/
 uploads/

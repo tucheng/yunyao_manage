@@ -16,23 +16,20 @@ SYSTEM_LEVEL_NAMES = {
     MEMBER_LEVEL_ID: "会员用户",
 }
 
-QuotaKind = Literal["paid_recipe", "free_recipe", "work", "recipe_view"]
+QuotaKind = Literal["recipe", "work", "recipe_view"]
 
 _REMAINING_FIELD = {
-    "paid_recipe": "paid_recipe_remaining",
-    "free_recipe": "free_recipe_remaining",
+    "recipe": "recipe_remaining",
     "work": "work_remaining",
     "recipe_view": "recipe_view_remaining",
 }
 _LIMIT_FIELD = {
-    "paid_recipe": "max_paid_recipes",
-    "free_recipe": "max_free_recipes",
+    "recipe": "max_recipes",
     "work": "max_works",
     "recipe_view": "max_views",
 }
 _QUOTA_LABEL = {
-    "paid_recipe": "发布付费配方",
-    "free_recipe": "发布免费配方",
+    "recipe": "发布配方",
     "work": "发布作品",
     "recipe_view": "查看配方",
 }
@@ -68,8 +65,7 @@ def _level_for_user(db: Session, user: User) -> UserLevel:
 
 def _reset_quota(quota: UserUsageQuota, level: UserLevel, quota_date: date) -> None:
     quota.quota_date = quota_date
-    quota.paid_recipe_remaining = max(0, level.max_paid_recipes or 0)
-    quota.free_recipe_remaining = max(0, level.max_free_recipes or 0)
+    quota.recipe_remaining = max(0, level.max_recipes or 0)
     quota.work_remaining = max(0, level.max_works or 0)
     quota.recipe_view_remaining = max(0, level.max_views or 0)
 
@@ -110,7 +106,7 @@ def consume_quota(db: Session, user: User, kind: QuotaKind) -> int:
     field = _REMAINING_FIELD[kind]
     remaining = getattr(quota, field) or 0
     if remaining <= 0:
-        if kind in ("paid_recipe", "free_recipe"):
+        if kind == "recipe":
             raise HTTPException(status_code=403, detail="今天发布配方的额度已用完！")
         else:
             raise HTTPException(status_code=403, detail=f"今天{_QUOTA_LABEL[kind]}额度已使用完")
@@ -144,13 +140,11 @@ def quota_status(db: Session, user: User) -> dict:
     quota, level = get_or_create_quota(db, user)
     return {
         "quota_date": str(quota.quota_date),
-        "paid_recipe_remaining": quota.paid_recipe_remaining,
-        "free_recipe_remaining": quota.free_recipe_remaining,
+        "recipe_remaining": quota.recipe_remaining,
         "work_remaining": quota.work_remaining,
         "recipe_view_remaining": quota.recipe_view_remaining,
         "redeem_count": quota.redeem_count,
-        "max_paid_recipes": level.max_paid_recipes,
-        "max_free_recipes": level.max_free_recipes,
+        "max_recipes": level.max_recipes,
         "max_works": level.max_works,
         "max_views": level.max_views,
     }

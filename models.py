@@ -9,7 +9,6 @@ class User(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     username = Column(String(100), unique=True, nullable=True)
-    openid = Column(String(100), unique=True, index=True, nullable=False)
     email = Column(String(200), unique=True, nullable=True)  # 加密存储
     phone = Column(String(200), unique=True, nullable=True)  # 加密存储
     email_hash = Column(String(64), unique=True, nullable=True, index=True)  # SHA-256，用于查询
@@ -21,7 +20,6 @@ class User(Base):
     gender = Column(String(10), default="")  # 性别
     birthday = Column(String(20), default="")  # 生日
     location = Column(String(100), default="")  # 所在地
-    balance = Column(Float, default=0.0)
     trust_score = Column(Float, default=100.0)  # 信任分 0-100
     level_id = Column(Integer, ForeignKey("user_levels.id"), default=5)
     is_muted = Column(Boolean, default=False)
@@ -69,41 +67,23 @@ class Recipe(Base):
     kiln_type = Column(String(30), default="")  # 电窑 / 气窑 / 柴窑 / 乐烧
     kiln_type_other = Column(String(50), default="")  # 自定义窑炉类型
     body_material = Column(String(30), default="")  # 坯体料类型
-    price = Column(Integer, default=0)  # 分，0=免费
     # 烧制服务专用
     turnaround = Column(String(50), default="")  # 周转时间，如"3-5天"
     # 找配方专用
-    reward = Column(Integer, default=0)  # 悬赏金额（分）
     contact = Column(String(200), default="")  # 联系方式/咸鱼链接
     visibility = Column(String(20), default="private")
     likes = Column(Integer, default=0)
-    sold_count = Column(Integer, default=0)
     work_count = Column(Integer, default=0, nullable=False)  # 关联作品数量
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), nullable=True)  # 编辑时手动设置，不用 onupdate
 
     forked_from = Column(Integer, nullable=True)  # 二次改造来源配方ID
-    source = Column(String(20), default="")  # 来源：glazy, etc.
+    source = Column(String(20), default="")  # 外部数据来源标识
     source_id = Column(String(50), default="")  # 来源原始ID
     surface = Column(String(30), default="")  # 釉面质感
     transparency = Column(String(30), default="")  # 透明度
     glaze_colors = Column(Text, default="[]")  # JSON: [{hex, r, g, b, name}]
     color = Column(String(50), default="")  # 釉色名称
-
-
-class Purchase(Base):
-    """购买/交易记录"""
-    __tablename__ = "purchases"
-
-    id = Column(Integer, primary_key=True, index=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
-    work_id = Column(Integer, ForeignKey("works.id"), nullable=True)
-    buyer_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    seller_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    amount = Column(Integer, nullable=False)
-    status = Column(String(20), default="pending")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    confirmed_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class Review(Base):
@@ -112,7 +92,6 @@ class Review(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     parent_id = Column(Integer, ForeignKey("reviews.id"), nullable=True)
-    purchase_id = Column(Integer, ForeignKey("purchases.id"), nullable=True)
     recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
     work_id = Column(Integer, ForeignKey("works.id"), nullable=True)
     user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
@@ -331,8 +310,8 @@ class Material(Base):
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(200), nullable=False, index=True)        # 中文名
     name_en = Column(String(200), default="")                      # 英文名
-    source = Column(String(20), default="")                        # 'local' 或 'glazy'
-    source_id = Column(Integer, nullable=True)                     # glazy_id（来源glazy时）
+    source = Column(String(20), default="")                        # 'local' 或 'overseas'
+    source_id = Column(Integer, nullable=True)                     # 外部来源数据ID
     formula = Column(String(200), default="")                      # 分子式
     molecular_weight = Column(String(50), default="")              # 分子量
     is_analysis = Column(Integer, default=0)
@@ -360,33 +339,6 @@ class Material(Base):
     sro = Column(Float, nullable=True)
     loi = Column(Float, nullable=True)
     thermal_expansion = Column(Float, nullable=True)
-    category = Column(String(50), default="")
-    sort_order = Column(Integer, default=0)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-
-class CeramicMaterial(Base):
-    """陶瓷原材料清单（附录1）"""
-    __tablename__ = "ceramic_materials"
-
-    id = Column(Integer, primary_key=True, index=True)
-    name = Column(String(100), nullable=False, index=True)       # 原材料名
-    name_en = Column(String(100), default="")                      # 英文名
-    formula = Column(String(200), default="")                     # 分子式（Unicode下标）
-    molecular_weight = Column(String(50), default="")            # 分子量
-    # 氧化物成分（重量百分比 %）
-    sio2 = Column(Float, nullable=True)
-    al2o3 = Column(Float, nullable=True)
-    fe2o3 = Column(Float, nullable=True)
-    tio2 = Column(Float, nullable=True)
-    cao = Column(Float, nullable=True)
-    mgo = Column(Float, nullable=True)
-    na2o = Column(Float, nullable=True)
-    k2o = Column(Float, nullable=True)
-    zno = Column(Float, nullable=True)
-    b2o3 = Column(Float, nullable=True)
-    p2o5 = Column(Float, nullable=True)
-    loi = Column(Float, nullable=True)  # 烧失量
     category = Column(String(50), default="")
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -434,8 +386,8 @@ class UserLevel(Base):
 
     id = Column(Integer, primary_key=True, index=True)
     name = Column(String(50), nullable=False)
-    max_paid_recipes = Column(Integer, default=0)
-    max_free_recipes = Column(Integer, default=10)
+    # 数据库暂沿用 max_free_recipes 列名；应用层统一称为配方额度。
+    max_recipes = Column("max_free_recipes", Integer, default=10)
     max_works = Column(Integer, default=50)
     max_views = Column(Integer, default=0, comment="每日可查看配方上限，0=禁止查看")
     description = Column(String(200), default="")
@@ -449,8 +401,8 @@ class UserUsageQuota(Base):
 
     user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
     quota_date = Column(Date, nullable=False, index=True)
-    paid_recipe_remaining = Column(Integer, nullable=False, default=0)
-    free_recipe_remaining = Column(Integer, nullable=False, default=0)
+    # 数据库暂沿用 free_recipe_remaining 列名；应用层不再区分付费/免费配方。
+    recipe_remaining = Column("free_recipe_remaining", Integer, nullable=False, default=0)
     work_remaining = Column(Integer, nullable=False, default=0)
     recipe_view_remaining = Column(Integer, nullable=False, default=0)
     redeem_count = Column(Integer, nullable=False, default=0)
@@ -531,18 +483,6 @@ class AppSetting(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
-class WalletTransaction(Base):
-    """钱包交易记录"""
-    __tablename__ = "wallet_transactions"
-
-    id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
-    type = Column(String(20), nullable=False)  # deposit / withdraw / spending
-    amount = Column(Integer, nullable=False)  # 分（正数）
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-
 class RecipeVersion(Base):
     """配方历史版本快照"""
     __tablename__ = "recipe_versions"
@@ -556,29 +496,6 @@ class RecipeVersion(Base):
     note = Column(String(200), default="")  # 自动生成的备注
     created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-
-class GlazyMaterial(Base):
-    """Glazy 海外材料数据"""
-    __tablename__ = "glazy_materials"
-
-    glazy_id = Column(Integer, primary_key=True, autoincrement=False)
-    name = Column(String(200), nullable=False, index=True)
-    name_cn = Column(String(200), default="")
-    is_analysis = Column(Integer, default=0)
-    is_primitive = Column(Integer, default=0)
-    sio2 = Column(Float, nullable=True)
-    al2o3 = Column(Float, nullable=True)
-    na2o = Column(Float, nullable=True)
-    k2o = Column(Float, nullable=True)
-    mgo = Column(Float, nullable=True)
-    cao = Column(Float, nullable=True)
-    fe2o3 = Column(Float, nullable=True)
-    tio2 = Column(Float, nullable=True)
-    zno = Column(Float, nullable=True)
-    b2o3 = Column(Float, nullable=True)
-    p2o5 = Column(Float, nullable=True)
-    loi = Column(Float, nullable=True)
 
 
 class RedeemCode(Base):

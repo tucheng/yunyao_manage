@@ -7,8 +7,7 @@ window.loadLevels = function() {
       return '<tr>' +
         '<td>' + l.id + '</td>' +
         '<td><strong>' + esc(l.name) + '</strong></td>' +
-        '<td>' + l.max_paid_recipes + '</td>' +
-        '<td>' + l.max_free_recipes + '</td>' +
+        '<td>' + l.max_recipes + '</td>' +
         '<td>' + l.max_works + '</td>' +
         '<td>' + (l.max_views || '不限') + '</td>' +
         '<td>' + l.user_count + '</td>' +
@@ -28,8 +27,7 @@ window.showLevelModal = function(id) {
       var l = levels.find(function(x) { return x.id === id; });
       if (!l) return;
       document.getElementById('levelEditName').value = l.name;
-      document.getElementById('levelEditMaxPaid').value = l.max_paid_recipes;
-      document.getElementById('levelEditMaxFree').value = l.max_free_recipes;
+      document.getElementById('levelEditMaxRecipes').value = l.max_recipes;
       document.getElementById('levelEditMaxWorks').value = l.max_works;
       document.getElementById('levelEditMaxViews').value = l.max_views;
       document.getElementById('levelEditSort').value = l.sort_order;
@@ -37,8 +35,7 @@ window.showLevelModal = function(id) {
     });
   } else {
     document.getElementById('levelEditName').value = '';
-    document.getElementById('levelEditMaxPaid').value = 0;
-    document.getElementById('levelEditMaxFree').value = 10;
+    document.getElementById('levelEditMaxRecipes').value = 10;
     document.getElementById('levelEditMaxWorks').value = 50;
     document.getElementById('levelEditMaxViews').value = 0;
     document.getElementById('levelEditSort').value = 99;
@@ -50,8 +47,7 @@ window.showLevelModal = function(id) {
 window.saveLevel = function() {
   var data = {
     name: document.getElementById('levelEditName').value,
-    max_paid_recipes: parseInt(document.getElementById('levelEditMaxPaid').value) || 0,
-    max_free_recipes: parseInt(document.getElementById('levelEditMaxFree').value) || 0,
+    max_recipes: parseInt(document.getElementById('levelEditMaxRecipes').value) || 0,
     max_works: parseInt(document.getElementById('levelEditMaxWorks').value) || 0,
     max_views: parseInt(document.getElementById('levelEditMaxViews').value) || 0,
     sort_order: parseInt(document.getElementById('levelEditSort').value) || 0,

@@ -1,0 +1,14 @@
+.git
+.env
+.env.*
+!.env.prod.example
+.encryption_key
+__pycache__
+*.pyc
+.venv
+venv
+logs
+uploads
+wheels
+login_resp.json
+Python314Libsite-packages

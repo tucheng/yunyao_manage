@@ -1,4 +1,4 @@
-"""数据加密模块 - 对付费配方的原料和步骤进行 AES 加密存储"""
+"""数据加密模块 - 对配方原料和用量进行加密存储。"""
 
 import os
 import base64
@@ -6,11 +6,10 @@ import hashlib
 from cryptography.fernet import Fernet
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+from app_config import ENCRYPTION_KEY_FILE, RECIPE_ENCRYPT_KEY
 
-KEY_FILE = os.path.join(os.path.dirname(__file__), ".encryption_key")
-
-# 环境变量优先，其次文件
-ENV_PASSWORD = os.getenv("RECIPE_ENCRYPT_KEY", "")
+KEY_FILE = ENCRYPTION_KEY_FILE
+ENV_PASSWORD = RECIPE_ENCRYPT_KEY
 
 
 def _get_key() -> bytes:

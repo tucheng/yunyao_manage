@@ -1,11 +1,13 @@
 from datetime import datetime
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from database import get_db
 from models import Complaint, User
+from app_config import ADMIN_USER_IDS
+from auth_utils import get_current_user
 
 router = APIRouter(prefix="/complaints", tags=["投诉建议"])
 
@@ -17,7 +19,6 @@ class ComplaintCreate(BaseModel):
 
 
 class ComplaintReply(BaseModel):
-    admin_id: int
     reply: str
 
 
@@ -45,7 +46,7 @@ def list_complaints(
         raise HTTPException(status_code=404, detail="用户不存在")
 
     query = db.query(Complaint)
-    if (user.openid or "").startswith("mock_admin") or user.nickname in ("admin", "管理员"):
+    if user.is_admin or user.id in ADMIN_USER_IDS:
         pass
     else:
         query = query.filter(Complaint.user_id == user_id)
@@ -79,6 +80,7 @@ def create_complaint(body: ComplaintCreate, db: Session = Depends(get_db)):
 def reply_complaint(
     complaint_id: int,
     body: ComplaintReply,
+    request: Request,
     db: Session = Depends(get_db),
 ):
     reply = (body.reply or "").strip()
@@ -89,12 +91,12 @@ def reply_complaint(
     if not item:
         raise HTTPException(status_code=404, detail="反馈不存在")
 
-    admin = db.query(User).filter(User.id == body.admin_id).first()
-    if not admin:
-        raise HTTPException(status_code=404, detail="用户不存在")
+    admin = get_current_user(request, db)
+    if not admin.is_admin and admin.id not in ADMIN_USER_IDS:
+        raise HTTPException(status_code=403, detail="无权回复反馈")
 
     item.reply = reply[:500]
-    item.admin_id = body.admin_id
+    item.admin_id = admin.id
     item.status = "replied"
     item.replied_at = datetime.utcnow()
     db.commit()

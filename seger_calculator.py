@@ -402,8 +402,8 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
     --------
     1. Fetch all RecipeIngredient rows for *recipe_id*.
     2. Decrypt each ingredient's `name` (AES) and `amount`.
-    3. Look up oxide composition from **ceramic_materials** first, then
-       **glazy_materials** (matched by ``name_en``, ``name``, or ``name_cn``).
+    3. Look up oxide composition from the unified **materials** catalog
+       (matched by ``name_en`` or ``name``).
     4. Convert each ingredient's weight → oxide moles:
        ``amount(g) × oxide% / molecular_weight``.
     5. Sum oxide moles across all ingredients.

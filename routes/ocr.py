@@ -1,5 +1,4 @@
 import base64
-import os
 import threading
 import time
 from io import BytesIO
@@ -7,11 +6,15 @@ from io import BytesIO
 import requests
 from fastapi import APIRouter, File, HTTPException, UploadFile
 from PIL import Image, UnidentifiedImageError
+from app_config import (
+    BAIDU_OCR_API_KEY,
+    BAIDU_OCR_API_URL,
+    BAIDU_OCR_SECRET_KEY,
+    BAIDU_OCR_TOKEN_URL,
+)
 
 router = APIRouter(prefix="/ocr", tags=["文字识别"])
 
-BAIDU_TOKEN_URL = "https://aip.baidubce.com/oauth/2.0/token"
-BAIDU_OCR_URL = "https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic"
 MAX_FILE_SIZE = 3 * 1024 * 1024
 ALLOWED_FORMATS = {"JPEG", "PNG", "BMP"}
 
@@ -21,8 +24,8 @@ _token_lock = threading.Lock()
 
 
 def _credentials() -> tuple[str, str]:
-    api_key = os.getenv("BAIDU_OCR_API_KEY", "").strip()
-    secret_key = os.getenv("BAIDU_OCR_SECRET_KEY", "").strip()
+    api_key = BAIDU_OCR_API_KEY
+    secret_key = BAIDU_OCR_SECRET_KEY
     if not api_key or not secret_key:
         raise HTTPException(status_code=503, detail="OCR 服务尚未配置")
     return api_key, secret_key
@@ -41,7 +44,7 @@ def _get_access_token(force_refresh: bool = False) -> str:
         api_key, secret_key = _credentials()
         try:
             response = requests.post(
-                BAIDU_TOKEN_URL,
+                BAIDU_OCR_TOKEN_URL,
                 params={"grant_type": "client_credentials", "client_id": api_key, "client_secret": secret_key},
                 timeout=10,
             )
@@ -84,7 +87,7 @@ async def recognize_image(file: UploadFile = File(...)):
 
     def call_baidu(token: str):
         return requests.post(
-            BAIDU_OCR_URL,
+            BAIDU_OCR_API_URL,
             params={"access_token": token},
             data={
                 "image": base64.b64encode(content).decode("ascii"),

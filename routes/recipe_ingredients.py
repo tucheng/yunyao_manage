@@ -3,7 +3,7 @@ from sqlalchemy import text, func
 from sqlalchemy.orm import Session
 from database import get_db
 from auth_utils import user_id_from_request
-from models import Purchase, RecipeIngredient, Recipe, IngredientName, Material
+from models import RecipeIngredient, Recipe, IngredientName, Material
 from schemas import RecipeIngredientOut
 from security import encrypt, decrypt, hash_for_lookup
 from seger_calculator import calculate_seger
@@ -24,19 +24,11 @@ def get_ingredients(recipe_id: int, request: Request, db: Session = Depends(get_
     current_user_id = user_id_from_request(request)
     is_owner = bool(current_user_id and recipe.user_id == current_user_id)
 
-    if recipe.visibility == "private" and not is_owner:
+    if recipe.visibility not in ("public", "showoff") and not is_owner:
         raise HTTPException(status_code=404, detail="配方不存在")
 
-    if recipe.visibility in ("paid", "showoff") and not is_owner:
-        if not current_user_id:
-            return []
-        purchase = db.query(Purchase).filter(
-            Purchase.recipe_id == recipe_id,
-            Purchase.buyer_id == current_user_id,
-            Purchase.status == "confirmed",
-        ).first()
-        if not purchase:
-            return []
+    if recipe.visibility == "showoff" and not is_owner:
+        return []
 
     rows = (
         db.query(RecipeIngredient)
