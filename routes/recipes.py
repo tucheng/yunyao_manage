@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion
+from models import AppSetting, Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion
 from schemas import (
     RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
     ReviewCreate, ReviewOut,
@@ -12,6 +12,7 @@ from auth_utils import user_id_from_request
 from sqlalchemy import func
 from seger_calculator import calculate_seger
 from services.recipe_version import snapshot_recipe
+from color_names import color_name_in_range, get_color_range_config
 import json
 import logging
 from datetime import datetime
@@ -65,6 +66,51 @@ def _public_recipe_query(db: Session):
     )
 
 
+def _get_color_ranges(db: Session) -> list:
+    row = db.query(AppSetting).filter(AppSetting.key == "work_search_color_ranges").first()
+    if row and row.value:
+        try:
+            value = json.loads(row.value)
+            if isinstance(value, list):
+                return value
+        except Exception:
+            pass
+    return get_color_range_config()
+
+
+def _color_name_in_ranges(name: str, range_value: str, color_ranges: list) -> bool:
+    if not name or not range_value:
+        return False
+    for item in color_ranges:
+        if item.get("value") == range_value:
+            return name in (item.get("names") or [])
+    return color_name_in_range(name, range_value)
+
+
+def _recipe_has_color_range(recipe: Recipe, range_value: str, color_ranges: list) -> bool:
+    if not range_value:
+        return True
+    try:
+        colors = json.loads(recipe.glaze_colors) if recipe.glaze_colors else []
+    except Exception:
+        colors = []
+    if not isinstance(colors, list):
+        return False
+    return any(
+        _color_name_in_ranges((item or {}).get("name", ""), range_value, color_ranges)
+        for item in colors
+        if isinstance(item, dict)
+    )
+
+
+def _distinct_public_recipe_values(db: Session, column) -> list[str]:
+    return [row[0] for row in db.query(column).filter(
+        column != "",
+        column.isnot(None),
+        Recipe.visibility.in_(["public", "showoff"]),
+    ).distinct().order_by(column).all()]
+
+
 def _recipe_ingredient_names(recipe_id: int, db: Session) -> list[str]:
     """从 recipe_ingredients 表查原料名称（解密后返回）"""
     rows = db.query(RecipeIngredient.name).filter(
@@ -103,7 +149,16 @@ def _recipe_has_work(recipe: Recipe, work_count: int) -> bool:
     return bool(work_count and work_count > 0)
 
 
-def _recipe_matches_search_filters(recipe: Recipe, material: str, has_work: str, work_count: int, materials: str = "", db: Session = None) -> bool:
+def _recipe_matches_search_filters(
+    recipe: Recipe,
+    material: str,
+    has_work: str,
+    work_count: int,
+    materials: str = "",
+    db: Session = None,
+    color_range: str = "",
+    color_ranges: list | None = None,
+) -> bool:
     if material and not _recipe_has_material(recipe, material, db):
         return False
     if materials and not _recipe_has_all_materials(recipe, materials, db):
@@ -112,6 +167,8 @@ def _recipe_matches_search_filters(recipe: Recipe, material: str, has_work: str,
     if has_work == "yes" and not has_linked_work:
         return False
     if has_work == "no" and has_linked_work:
+        return False
+    if color_range and not _recipe_has_color_range(recipe, color_range, color_ranges or []):
         return False
     return True
 
@@ -177,41 +234,20 @@ def _serialize_recipe_list_item(recipe, nickname, avatar, work_count=0, work_ima
 
 @router.get("/search/config")
 def recipe_search_config(db: Session = Depends(get_db)):
-    # fallback 选项
-    _KILN_OPTIONS = ["电窑", "气窑", "柴窑", "乐烧"]
-    _SURFACE_OPTIONS = ["亮光", "丝光", "蜡光", "柔光", "无光", "磨砂"]
-    _TRANSPARENCY_OPTIONS = ["高透", "微透", "半透", "不透"]
-
     # 原料 — 从 IngredientName 表取
     rows = db.query(IngredientName.name).order_by(IngredientName.name).all()
     material_names = [r[0] for r in rows]
 
-    # 筛选项 — 从 Recipe 表取实际数据去重，确保能搜到结果
-    _VISIBLE = ["public", "showoff"]
-    kiln_types = [r[0] for r in db.query(Recipe.kiln_type).filter(
-        Recipe.kiln_type != "", Recipe.kiln_type.isnot(None),
-        Recipe.visibility.in_(_VISIBLE)
-    ).distinct().order_by(Recipe.kiln_type).all()]
-    surfaces = [r[0] for r in db.query(Recipe.surface).filter(
-        Recipe.surface != "", Recipe.surface.isnot(None),
-        Recipe.visibility.in_(_VISIBLE)
-    ).distinct().order_by(Recipe.surface).all()]
-    transparencies = [r[0] for r in db.query(Recipe.transparency).filter(
-        Recipe.transparency != "", Recipe.transparency.isnot(None),
-        Recipe.visibility.in_(_VISIBLE)
-    ).distinct().order_by(Recipe.transparency).all()]
-
-    # 温度和颜色 — 从 Recipe 表取实际值
-    colors = [r[0] for r in db.query(Recipe.color).filter(Recipe.color != "", Recipe.color.isnot(None), Recipe.visibility.in_(_VISIBLE)).distinct().order_by(Recipe.color).all()]
-    temperatures = [r[0] for r in db.query(Recipe.temperature).filter(Recipe.temperature != "", Recipe.temperature.isnot(None), Recipe.visibility.in_(_VISIBLE)).distinct().order_by(Recipe.temperature).all()]
-
     return {
         "materials": material_names,
-        "kiln_types": kiln_types or _KILN_OPTIONS,
-        "surfaces": surfaces or _SURFACE_OPTIONS,
-        "transparencies": transparencies or _TRANSPARENCY_OPTIONS,
-        "temperatures": temperatures,
-        "colors": colors,
+        "categories": _distinct_public_recipe_values(db, Recipe.category),
+        "kiln_types": _distinct_public_recipe_values(db, Recipe.kiln_type),
+        "atmospheres": _distinct_public_recipe_values(db, Recipe.atmosphere),
+        "temperatures": _distinct_public_recipe_values(db, Recipe.temperature),
+        "body_materials": _distinct_public_recipe_values(db, Recipe.body_material),
+        "surfaces": _distinct_public_recipe_values(db, Recipe.surface),
+        "transparencies": _distinct_public_recipe_values(db, Recipe.transparency),
+        "color_ranges": _get_color_ranges(db),
         "has_work_options": [
             {"value": "yes", "label": "有作品"},
             {"value": "no", "label": "无作品"},
@@ -228,9 +264,12 @@ def count_recipes(
     material: str = "",
     materials: str = "",
     has_work: str = "",
+    atmosphere: str = "",
+    body_material: str = "",
     surface: str = "",
     transparency: str = "",
     color: str = "",
+    color_range: str = "",
     temperature: str = "",
     kiln_type: str = "",
     has_images: str = "",
@@ -241,6 +280,10 @@ def count_recipes(
         query = query.filter(Recipe.type == type)
     if category:
         query = query.filter(Recipe.category == category)
+    if atmosphere:
+        query = query.filter(Recipe.atmosphere == atmosphere)
+    if body_material:
+        query = query.filter(Recipe.body_material == body_material)
     if author_id > 0:
         query = query.filter(Recipe.user_id == author_id)
     if keyword:
@@ -251,8 +294,6 @@ def count_recipes(
         query = query.filter(Recipe.surface == surface)
     if transparency:
         query = query.filter(Recipe.transparency == transparency)
-    if color:
-        query = query.filter(Recipe.color == color)
     if temperature:
         query = query.filter(Recipe.temperature == temperature)
     if kiln_type:
@@ -265,12 +306,14 @@ def count_recipes(
         query = query.filter(
             (Recipe.cover == "") & ((Recipe.images.is_(None)) | (Recipe.images == "[]"))
         )
+    selected_color_range = color_range or color
     rows_query = _recipe_rows_with_work_counts(query)
-    if not material and not materials and not has_work:
+    if not material and not materials and not has_work and not selected_color_range:
         return {"count": query.count()}
+    color_ranges = _get_color_ranges(db) if selected_color_range else []
     count = 0
     for recipe, _, _, work_count, *_ in rows_query.all():
-        if _recipe_matches_search_filters(recipe, material, has_work, work_count or 0, materials, db):
+        if _recipe_matches_search_filters(recipe, material, has_work, work_count or 0, materials, db, selected_color_range, color_ranges):
             count += 1
     return {"count": count}
 
@@ -285,9 +328,12 @@ def list_recipes(
     material: str = "",
     materials: str = "",
     has_work: str = "",
+    atmosphere: str = "",
+    body_material: str = "",
     surface: str = "",
     transparency: str = "",
     color: str = "",
+    color_range: str = "",
     temperature: str = "",
     kiln_type: str = "",
     has_images: str = "",  # "1"=有图 "0"=无图
@@ -302,6 +348,10 @@ def list_recipes(
         query = query.filter(Recipe.type == type)
     if category:
         query = query.filter(Recipe.category == category)
+    if atmosphere:
+        query = query.filter(Recipe.atmosphere == atmosphere)
+    if body_material:
+        query = query.filter(Recipe.body_material == body_material)
     if author_id > 0:
         query = query.filter(Recipe.user_id == author_id)
     if keyword:
@@ -313,8 +363,6 @@ def list_recipes(
         query = query.filter(Recipe.surface == surface)
     if transparency:
         query = query.filter(Recipe.transparency == transparency)
-    if color:
-        query = query.filter(Recipe.color == color)
     if temperature:
         query = query.filter(Recipe.temperature == temperature)
     if kiln_type:
@@ -328,11 +376,13 @@ def list_recipes(
             (Recipe.cover == "") & ((Recipe.images.is_(None)) | (Recipe.images == "[]"))
         )
 
+    selected_color_range = color_range or color
+    color_ranges = _get_color_ranges(db) if selected_color_range else []
     rows_query = _recipe_rows_with_work_counts(query).order_by(Recipe.created_at.desc())
-    if material or materials or has_work:
+    if material or materials or has_work or selected_color_range:
         filtered_rows = []
         for recipe, nickname, avatar, work_count, work_image, work_images, fav_count in rows_query.all():
-            if _recipe_matches_search_filters(recipe, material, has_work, work_count or 0, materials, db):
+            if _recipe_matches_search_filters(recipe, material, has_work, work_count or 0, materials, db, selected_color_range, color_ranges):
                 filtered_rows.append((recipe, nickname, avatar, work_count, work_image, work_images, fav_count))
         start = (page - 1) * page_size
         rows = filtered_rows[start:start + page_size]
@@ -594,10 +644,13 @@ def search(
     keyword: str = "",
     q: str = "",
     body_material: str = "",
+    category: str = "",
+    atmosphere: str = "",
     kiln_type: str = "",
     surface: str = "",
     transparency: str = "",
     color: str = "",
+    color_range: str = "",
     temperature: str = "",
     has_images: str = "",  # "1"=有图 "0"=无图
     author_id: int = 0,
@@ -621,14 +674,16 @@ def search(
         )
     if body_material:
         recipe_query = recipe_query.filter(Recipe.body_material == body_material)
+    if category:
+        recipe_query = recipe_query.filter(Recipe.category == category)
+    if atmosphere:
+        recipe_query = recipe_query.filter(Recipe.atmosphere == atmosphere)
     if kiln_type:
         recipe_query = recipe_query.filter(Recipe.kiln_type == kiln_type)
     if surface:
         recipe_query = recipe_query.filter(Recipe.surface == surface)
     if transparency:
         recipe_query = recipe_query.filter(Recipe.transparency == transparency)
-    if color:
-        recipe_query = recipe_query.filter(Recipe.color == color)
     if temperature:
         recipe_query = recipe_query.filter(Recipe.temperature == temperature)
     if has_images == "1":
@@ -642,12 +697,18 @@ def search(
     if author_id:
         recipe_query = recipe_query.filter(Recipe.user_id == author_id)
 
-    recipes = (
-        recipe_query.order_by(Recipe.created_at.desc())
-        .offset((page - 1) * page_size)
-        .limit(page_size)
-        .all()
-    )
+    selected_color_range = color_range or color
+    ordered_recipe_query = recipe_query.order_by(Recipe.created_at.desc())
+    if selected_color_range:
+        color_ranges = _get_color_ranges(db)
+        matched_recipes = [
+            recipe for recipe in ordered_recipe_query.all()
+            if _recipe_has_color_range(recipe, selected_color_range, color_ranges)
+        ]
+        start = (page - 1) * page_size
+        recipes = matched_recipes[start:start + page_size]
+    else:
+        recipes = ordered_recipe_query.offset((page - 1) * page_size).limit(page_size).all()
     recipe_list = []
     for r in recipes:
         user = db.query(User).filter(User.id == r.user_id).first()
@@ -1024,12 +1085,9 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         temperature=recipe.temperature,
         atmosphere=recipe.atmosphere,
         kiln_type=recipe.kiln_type,
-        kiln_type_other=recipe.kiln_type_other,
         body_material=recipe.body_material,
         surface=recipe.surface,
         transparency=recipe.transparency,
-        turnaround=recipe.turnaround,
-        contact=recipe.contact,
         visibility=recipe.visibility if recipe.visibility in ("public", "private", "showoff") else "private",
         forked_from=recipe.forked_from,
         glaze_colors=glaze_colors_json,

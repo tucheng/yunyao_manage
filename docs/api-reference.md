@@ -117,8 +117,8 @@
 ### 列表与搜索
 | 方法 | 路径 | 说明 | 关键参数 |
 |------|------|------|----------|
-| GET | `/recipes` | 配方列表（分页+筛选） | `page, page_size, type, category, keyword, author_id, material, has_work, surface, transparency, color, temperature, kiln_type, has_images` |
-| GET | `/recipes/search` | 搜索配方+作品 | `keyword, body_material, kiln_type, surface, transparency, color, temperature, has_images, author_id, page, page_size` |
+| GET | `/recipes` | 配方列表（分页+筛选） | `page, page_size, type, category, atmosphere, body_material, keyword, author_id, material, has_work, surface, transparency, color_range, temperature, kiln_type, has_images` |
+| GET | `/recipes/search` | 搜索配方+作品 | `keyword, category, atmosphere, body_material, kiln_type, surface, transparency, color_range, temperature, has_images, author_id, page, page_size` |
 | GET | `/recipes/search/config` | 搜索筛选项配置 | 无参数 |
 | GET | `/recipes/count` | 配方数量统计 | 同筛选参数 |
 | GET | `/recipes/feed/following` | 关注用户配方动态 | `user_id, page, page_size` |
@@ -159,14 +159,13 @@
 ### RecipeCreate 请求体
 ```json
 { "title": "必填", "type": "recipe", "cover": "", "images": "[]", "describe": "",
-  "category": "", "temperature": "", "atmosphere": "", "kiln_type": "", 
-  "kiln_type_other": "", "body_material": "", "surface": "", "transparency": "",
-  "turnaround": "", "contact": "", "visibility": "private",
+  "category": "", "temperature": "", "atmosphere": "", "kiln_type": "",
+  "body_material": "", "surface": "", "transparency": "", "visibility": "private",
   "work_id": 0, "forked_from": null, "glaze_colors": null }
 ```
 
 ### RecipeOut 响应字段
-`id, user_id, title, recipe_no, type, cover, images, describe, category, temperature, atmosphere, kiln_type, kiln_type_other, body_material, surface, transparency, turnaround, contact, visibility, likes, created_at, updated_at, is_favorited, forked_from, source, source_id, author_name, avatar, rating_avg, favorite_count, works_count, is_liked, ingredient_statuses, glaze_colors, color`
+`id, user_id, title, recipe_no, type, cover, images, describe, category, temperature, atmosphere, kiln_type, body_material, surface, transparency, visibility, likes, created_at, updated_at, is_favorited, forked_from, source, source_id, author_name, avatar, rating_avg, favorite_count, works_count, is_liked, ingredient_statuses, glaze_colors`
 
 ---
 
@@ -177,7 +176,7 @@
 ### 列表与搜索
 | 方法 | 路径 | 说明 | 关键参数 |
 |------|------|------|----------|
-| GET | `/works` | 作品列表（分页+高级筛选） | `page, page_size, q, user_id, recipe_id, body_material, kiln_type, temperature_range, surface, transparency, color_range, has_recipe, current_user_id` |
+| GET | `/works` | 作品列表（分页+高级筛选） | `page, page_size, q, user_id, recipe_id, category, atmosphere, body_material, kiln_type, temperature, surface, transparency, color_range, has_recipe, current_user_id` |
 | GET | `/works/search/config` | 搜索配置选项 | - |
 | GET | `/works/count` | 作品数量统计 | 同筛选参数 |
 | GET | `/works/feed/following` | 关注用户作品动态 | `user_id, page, page_size` |
@@ -187,14 +186,14 @@
 | 方法 | 路径 | 说明 | 参数 |
 |------|------|------|------|
 | GET | `/works/{work_id}` | 作品详情 | `current_user_id?` |
-| POST | `/works/` | 发布作品 | body: `{ image(必填), user_id(必填), description?, recipe_id?, body_material?, kiln_type?, temperature?, surface?, transparency?, images?, glaze_colors?, curve_id? }` |
+| POST | `/works/` | 发布作品 | body: `{ image(必填), user_id(必填), description?, recipe_id?, category?, atmosphere?, body_material?, kiln_type?, temperature?, surface?, transparency?, images?, glaze_colors?, curve_id? }` |
 | PUT | `/works/{work_id}` | 更新作品 | body: 同上 |
 | POST | `/works/{work_id}/favorite` | 收藏/取消 | body: `{ user_id }` |
 | POST | `/works/{work_id}/like` | 点赞/取消 | `user_id` |
 | POST | `/works/{work_id}/link_recipe` | 关联配方 | body: `{ user_id, recipe_id }` |
 
 ### 作品详情响应字段
-`id, user_id, nickname, avatar, recipe_id, recipe_title, recipe_cover, image, images, description, body_material, kiln_type, kiln_type_other, temperature, created_at, favorite_count, is_favorited, is_liked, likes, glaze_colors, surface, transparency, curve_id, curve_name, curve_data`
+`id, user_id, nickname, avatar, recipe_id, recipe_title, recipe_cover, image, images, description, category, atmosphere, body_material, kiln_type, temperature, created_at, favorite_count, is_favorited, is_liked, likes, glaze_colors, surface, transparency, curve_id, curve_name, curve_data`
 
 ---
 
@@ -409,7 +408,7 @@
 | 方法 | 路径 | 说明 |
 |------|------|------|
 | GET | `/admin/work-attributes` | 属性选项（分组） |
-| GET | `/admin/public/work-attributes` | **公开** 属性选项（前端发布/搜索用） |
+| GET | `/admin/public/work-attributes` | **公开** 属性选项（发布页下拉建议，仍允许自由输入） |
 | POST | `/admin/work-attributes` | 创建选项 |
 | PUT | `/admin/work-attributes/{opt_id}` | 编辑选项 |
 | DELETE | `/admin/work-attributes/{opt_id}` | 删除选项 |

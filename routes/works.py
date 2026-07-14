@@ -95,6 +95,8 @@ def following_works(
             "image": _image_url(work.image),
             "images": parse_image_list(work.images),
             "description": work.description or "",
+            "category": work.category or "",
+            "atmosphere": work.atmosphere or "",
             "body_material": work.body_material or "",
             "kiln_type": work.kiln_type or "",
             "temperature": work.temperature or "",
@@ -196,8 +198,11 @@ def _same_filter_value(raw: str, selected: str) -> bool:
 def _work_matches_search_filters(
     work: Work,
     recipe: Recipe,
+    category: str,
+    atmosphere: str,
     body_material: str,
     kiln_type: str,
+    temperature: str,
     temperature_range: str,
     surface: str,
     transparency: str,
@@ -207,6 +212,10 @@ def _work_matches_search_filters(
     color_ranges: list,
 ) -> bool:
     """All selected work-search filters are AND conditions."""
+    if category and not _same_filter_value(work.category, category):
+        return False
+    if atmosphere and not _same_filter_value(work.atmosphere, atmosphere):
+        return False
     if body_material and not _same_filter_value(work.body_material, body_material):
         return False
     if kiln_type and not _same_filter_value(work.kiln_type, kiln_type):
@@ -214,6 +223,8 @@ def _work_matches_search_filters(
     if surface and not _same_filter_value(work.surface, surface):
         return False
     if transparency and not _same_filter_value(work.transparency, transparency):
+        return False
+    if temperature and not _same_filter_value(work.temperature, temperature):
         return False
     if temperature_range and not _temperature_in_range(work.temperature, temperature_range, temperature_ranges):
         return False
@@ -227,24 +238,25 @@ def _work_matches_search_filters(
     return True
 
 
+def _distinct_work_values(db: Session, column) -> list[str]:
+    return [row[0] for row in db.query(column).filter(
+        column != "",
+        column.isnot(None),
+    ).distinct().order_by(column).all()]
+
+
 @router.get("/search/config")
 def get_work_search_config(db: Session = Depends(get_db)):
     """作品高级搜索配置。"""
-    from models import WorkAttributeOption
-    # 从 DB 读取作品属性选项
-    attr_options = db.query(WorkAttributeOption).order_by(WorkAttributeOption.category, WorkAttributeOption.sort_order).all()
-    body_materials = [o.value for o in attr_options if o.category == 'body_material']
-    kiln_types = [o.value for o in attr_options if o.category == 'kiln_type']
-    surfaces = [o.value for o in attr_options if o.category == "surface"]
-    transparencies = [o.value for o in attr_options if o.category == "transparency"]
-    types = [o.value for o in attr_options if o.category == "type"]
     return {
-        "body_materials": body_materials,
-        "types": types,
-        "kiln_types": kiln_types or KILN_TYPE_OPTIONS,
+        "categories": _distinct_work_values(db, Work.category),
+        "atmospheres": _distinct_work_values(db, Work.atmosphere),
+        "body_materials": _distinct_work_values(db, Work.body_material),
+        "kiln_types": _distinct_work_values(db, Work.kiln_type),
+        "temperatures": _distinct_work_values(db, Work.temperature),
         "temperature_ranges": _get_temperature_ranges(db),
-        "surfaces": surfaces or SURFACE_OPTIONS,
-        "transparencies": transparencies or TRANSPARENCY_OPTIONS,
+        "surfaces": _distinct_work_values(db, Work.surface),
+        "transparencies": _distinct_work_values(db, Work.transparency),
         "color_ranges": _get_color_ranges(db),
         "has_recipe_options": HAS_RECIPE_OPTIONS,
     }
@@ -255,8 +267,11 @@ def count_works(
     recipe_id: int = 0,
     user_id: int = 0,
     q: str = "",
+    category: str = "",
+    atmosphere: str = "",
     body_material: str = "",
     kiln_type: str = "",
+    temperature: str = "",
     temperature_range: str = "",
     surface: str = "",
     transparency: str = "",
@@ -278,6 +293,8 @@ def count_works(
         like = f"%{q}%"
         query = query.filter(
             Work.description.like(like)
+            | Work.category.like(like)
+            | Work.atmosphere.like(like)
             | Work.body_material.like(like)
             | Work.kiln_type.like(like)
             | Work.temperature.like(like)
@@ -287,8 +304,11 @@ def count_works(
         )
 
     has_search_filters = any([
+        category,
+        atmosphere,
         body_material,
         kiln_type,
+        temperature,
         temperature_range,
         surface,
         transparency,
@@ -305,8 +325,11 @@ def count_works(
         if _work_matches_search_filters(
             work,
             recipe,
+            category,
+            atmosphere,
             body_material,
             kiln_type,
+            temperature,
             temperature_range,
             surface,
             transparency,
@@ -325,8 +348,11 @@ def list_works(
     user_id: int = 0,
     current_user_id: int = 0,
     q: str = "",
+    category: str = "",
+    atmosphere: str = "",
     body_material: str = "",
     kiln_type: str = "",
+    temperature: str = "",
     temperature_range: str = "",
     surface: str = "",
     transparency: str = "",
@@ -362,6 +388,8 @@ def list_works(
         like = f"%{q}%"
         query = query.filter(
             Work.description.like(like)
+            | Work.category.like(like)
+            | Work.atmosphere.like(like)
             | Work.body_material.like(like)
             | Work.kiln_type.like(like)
             | Work.temperature.like(like)
@@ -371,8 +399,11 @@ def list_works(
         )
     ordered_query = query.order_by(Work.created_at.desc())
     has_search_filters = any([
+        category,
+        atmosphere,
         body_material,
         kiln_type,
+        temperature,
         temperature_range,
         surface,
         transparency,
@@ -389,8 +420,11 @@ def list_works(
             if _work_matches_search_filters(
                 work,
                 recipe,
+                category,
+                atmosphere,
                 body_material,
                 kiln_type,
+                temperature,
                 temperature_range,
                 surface,
                 transparency,
@@ -443,9 +477,10 @@ def list_works(
             "image": _image_url(work.image),
             "images": [_image_url(u) for u in imgs if u],
             "description": work.description or "",
+            "category": work.category or "",
+            "atmosphere": work.atmosphere or "",
             "body_material": work.body_material or "",
             "kiln_type": work.kiln_type or "",
-            "kiln_type_other": work.kiln_type_other or "",
             "temperature": work.temperature or "",
             "created_at": work.created_at,
             "comment_count": comment_count or 0,
@@ -474,9 +509,10 @@ def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
     image = normalize_image_url(data.get("image"))
     recipe_id = data.get("recipe_id") or None
     description = data.get("description", "")
+    category = data.get("category", "")
+    atmosphere = data.get("atmosphere", "")
     body_material = data.get("body_material", "")
     kiln_type = data.get("kiln_type", "")
-    kiln_type_other = data.get("kiln_type_other", "")
     temperature = data.get("temperature", "")
     surface = data.get("surface", "")
     transparency = data.get("transparency", "")
@@ -527,9 +563,10 @@ def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
     work.image = image
     work.images = serialize_image_list(images_raw)
     work.description = description
+    work.category = category
+    work.atmosphere = atmosphere
     work.body_material = body_material
     work.kiln_type = kiln_type
-    work.kiln_type_other = kiln_type_other
     work.temperature = temperature
     work.surface = surface
     work.transparency = transparency
@@ -559,9 +596,10 @@ def create_work(
     user_id = data.get("user_id", 0)
     recipe_id = data.get("recipe_id") or None
     description = data.get("description", "")
+    category = data.get("category", "")
+    atmosphere = data.get("atmosphere", "")
     body_material = data.get("body_material", "")
     kiln_type = data.get("kiln_type", "")
-    kiln_type_other = data.get("kiln_type_other", "")
     temperature = data.get("temperature", "")
     surface = data.get("surface", "")
     transparency = data.get("transparency", "")
@@ -628,9 +666,10 @@ def create_work(
         image=image,
         images=serialize_image_list(images_raw),
         description=description,
+        category=category,
+        atmosphere=atmosphere,
         body_material=body_material,
         kiln_type=kiln_type,
-        kiln_type_other=kiln_type_other,
         temperature=temperature,
         surface=surface,
         transparency=transparency,
@@ -753,9 +792,10 @@ def get_work(work_id: int, current_user_id: int = 0, db: Session = Depends(get_d
         "image": _image_url(work.image),
         "images": [_image_url(u) for u in imgs if u],
         "description": work.description or "",
+        "category": work.category or "",
+        "atmosphere": work.atmosphere or "",
         "body_material": work.body_material or "",
         "kiln_type": work.kiln_type or "",
-        "kiln_type_other": work.kiln_type_other or "",
         "temperature": work.temperature or "",
         "created_at": work.created_at,
         "favorite_count": favorite_count,

@@ -13,12 +13,9 @@ class RecipeCreate(BaseModel):
     temperature: str = ""
     atmosphere: str = ""
     kiln_type: str = ""
-    kiln_type_other: str = ""
     body_material: str = ""
     surface: str = ""
     transparency: str = ""
-    turnaround: str = ""
-    contact: str = ""
     visibility: str = "private"
     work_id: int = 0
     forked_from: Optional[int] = None
@@ -35,12 +32,9 @@ class RecipeUpdate(BaseModel):
     temperature: Optional[str] = None
     atmosphere: Optional[str] = None
     kiln_type: Optional[str] = None
-    kiln_type_other: Optional[str] = None
     body_material: Optional[str] = None
     surface: Optional[str] = None
     transparency: Optional[str] = None
-    turnaround: Optional[str] = None
-    contact: Optional[str] = None
     visibility: Optional[str] = None
     forked_from: Optional[int] = None
     glaze_colors: Optional[str] = None
@@ -58,12 +52,9 @@ class RecipeOut(BaseModel):
     temperature: Optional[str] = ""
     atmosphere: Optional[str] = ""
     kiln_type: Optional[str] = ""
-    kiln_type_other: Optional[str] = ""
     body_material: Optional[str] = ""
     surface: Optional[str] = ""
     transparency: Optional[str] = ""
-    turnaround: Optional[str] = ""
-    contact: Optional[str] = ""
     visibility: Optional[str] = "private"
     likes: Optional[int] = 0
     created_at: Optional[datetime] = None
@@ -80,7 +71,6 @@ class RecipeOut(BaseModel):
     is_liked: bool = False
     ingredient_statuses: Optional[dict] = None
     glaze_colors: Optional[str] = "[]"  # JSON: [{hex, r, g, b, name}]
-    color: Optional[str] = ""
 
     model_config = {"from_attributes": True}
 

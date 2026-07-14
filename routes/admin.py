@@ -452,7 +452,7 @@ def delete_work_attribute(opt_id: int, _admin=Depends(verify_admin), db: Session
 
 @router.get("/public/work-attributes")
 def get_public_work_attributes(db: Session = Depends(get_db)):
-    """公开查询，前端发布/搜索作品时用"""
+    """公开查询，供配方和作品发布页加载可输入的属性建议。"""
     options = db.query(WorkAttributeOption).order_by(WorkAttributeOption.category, WorkAttributeOption.sort_order).all()
     grouped = {}
     for opt in options:

@@ -65,12 +65,7 @@ class Recipe(Base):
     temperature = Column(String(30), default="")
     atmosphere = Column(String(20), default="")
     kiln_type = Column(String(30), default="")  # 电窑 / 气窑 / 柴窑 / 乐烧
-    kiln_type_other = Column(String(50), default="")  # 自定义窑炉类型
     body_material = Column(String(30), default="")  # 坯体料类型
-    # 烧制服务专用
-    turnaround = Column(String(50), default="")  # 周转时间，如"3-5天"
-    # 找配方专用
-    contact = Column(String(200), default="")  # 联系方式/咸鱼链接
     visibility = Column(String(20), default="private")
     likes = Column(Integer, default=0)
     work_count = Column(Integer, default=0, nullable=False)  # 关联作品数量
@@ -83,7 +78,6 @@ class Recipe(Base):
     surface = Column(String(30), default="")  # 釉面质感
     transparency = Column(String(30), default="")  # 透明度
     glaze_colors = Column(Text, default="[]")  # JSON: [{hex, r, g, b, name}]
-    color = Column(String(50), default="")  # 釉色名称
 
 
 class Review(Base):
@@ -157,9 +151,10 @@ class Work(Base):
     image = Column(Text, nullable=False)  # 作品主图
     images = Column(Text, default="[]")  # JSON 数组：多图URL
     description = Column(Text, default="")
+    category = Column(String(30), default="")
+    atmosphere = Column(String(20), default="")
     body_material = Column(String(30), default="")
     kiln_type = Column(String(30), default="")
-    kiln_type_other = Column(String(50), default="")
     temperature = Column(String(30), default="")
     likes = Column(Integer, default=0)
     glaze_colors = Column(Text, default="[]")  # JSON: [{hex, r, g, b, name}]
@@ -271,7 +266,7 @@ class WorkAttributeOption(Base):
     __tablename__ = "work_attribute_options"
 
     id = Column(Integer, primary_key=True, index=True)
-    category = Column(String(30), nullable=False, index=True)  # type / body_material / kiln_type / temperature / surface / transparency
+    category = Column(String(30), nullable=False, index=True)  # type / kiln_type / atmosphere / body_material / surface / transparency
     value = Column(String(50), nullable=False)
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
