@@ -2,9 +2,9 @@ import json
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from database import get_db
-from models import AppSetting, User, UserLevel, Recipe, Work, Notification, WorkAttributeOption, Material
+from models import AppSetting, User, UserLevel, Recipe, Work, Notification, WorkAttributeOption, Material, MaterialSubstitution
 from pydantic import BaseModel
 from typing import Optional
 from app_config import ADMIN_USER_IDS
@@ -470,10 +470,21 @@ def admin_list_materials(
 ):
     """管理员查看原材料列表"""
     q = db.query(Material)
-    if search:
+    search_whitespace = (" ", "\u3000", "\t", "\r", "\n", "\v", "\f", "\u00a0")
+    normalized_search = search or ""
+    for whitespace in search_whitespace:
+        normalized_search = normalized_search.replace(whitespace, "")
+    if normalized_search:
+        def without_spaces(column):
+            normalized = column
+            for whitespace in search_whitespace:
+                normalized = func.replace(normalized, whitespace, "")
+            return normalized
+
+        keyword = f"%{normalized_search}%"
         q = q.filter(
-            Material.name.like(f"%{search}%") |
-            Material.name_en.like(f"%{search}%")
+            without_spaces(Material.name).like(keyword) |
+            without_spaces(Material.name_en).like(keyword)
         )
     total = q.count()
     items = q.order_by(Material.source, Material.name).offset((page - 1) * page_size).limit(page_size).all()
@@ -505,4 +516,26 @@ def admin_list_materials(
             }
             for m in items
         ],
+    }
+
+
+@router.delete("/materials/{material_id}")
+def admin_delete_material(
+    material_id: int,
+    db: Session = Depends(get_db),
+    _=Depends(verify_admin),
+):
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="材料不存在")
+
+    deleted_substitutions = db.query(MaterialSubstitution).filter(or_(
+        MaterialSubstitution.source_material_id == material_id,
+        MaterialSubstitution.target_material_id == material_id,
+    )).delete(synchronize_session=False)
+    db.delete(material)
+    db.commit()
+    return {
+        "message": "材料已删除",
+        "deleted_substitutions": deleted_substitutions,
     }

@@ -8,6 +8,7 @@ Usage:
 """
 import json
 import logging
+import re
 from datetime import datetime, timezone
 
 from sqlalchemy import func
@@ -84,6 +85,10 @@ FLUX_OXIDES = ['na2o', 'k2o', 'cao', 'mgo', 'zno', 'fe2o3',
 def _get_oxide_value(material, oxide_col: str) -> float:
     """Get oxide percentage from a material ORM object, returning 0 if None."""
     return float(getattr(material, oxide_col, 0) or 0)
+
+
+def _normalized_material_name(name: str) -> str:
+    return re.sub(r"\s+", "", str(name or ""))
 
 
 def _get_acid_base_note(ratio: float) -> str:
@@ -479,6 +484,28 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
     included_additional = []
     found_no_oxides = []
 
+    # Build a whitespace-insensitive lookup once per calculation. Historical
+    # duplicate rows are retained, so their previous preference (higher SiO2,
+    # then source) remains deterministic while newly written names are unique.
+    catalog = (
+        db.query(Material)
+        .order_by(
+            func.coalesce(Material.sio2, 0).desc(),
+            Material.source.desc(),
+            Material.id,
+        )
+        .all()
+    )
+    materials_by_name = {}
+    materials_by_name_en = {}
+    for catalog_material in catalog:
+        name_key = _normalized_material_name(catalog_material.name)
+        if name_key:
+            materials_by_name.setdefault(name_key, catalog_material)
+        name_en_key = _normalized_material_name(catalog_material.name_en)
+        if name_en_key:
+            materials_by_name_en.setdefault(name_en_key, catalog_material)
+
     for d in ingredient_data:
         name = d['name']
         name_en = d['name_en']
@@ -492,32 +519,16 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
         material = None
         matched_by = ""
 
-        # a) decrypted name → materials.name (去空格匹配，数据优先)
-        name_clean = name.replace(' ', '')
-        material = (
-            db.query(Material)
-            .filter(func.replace(Material.name, ' ', '') == name_clean)
-            .order_by(
-                func.coalesce(Material.sio2, 0).desc(),
-                Material.source.desc(),
-            )
-            .first()
-        )
+        # a) decrypted name → materials.name (忽略全部空白字符)
+        name_clean = _normalized_material_name(name)
+        material = materials_by_name.get(name_clean)
         if material:
             matched_by = f"materials.name='{name}'"
 
-        # b) name_en → materials.name_en (去空格匹配，数据优先)
+        # b) name_en → materials.name_en (忽略全部空白字符)
         if not material and name_en:
-            name_en_clean = name_en.replace(' ', '')
-            material = (
-                db.query(Material)
-                .filter(func.replace(Material.name_en, ' ', '') == name_en_clean)
-                .order_by(
-                    func.coalesce(Material.sio2, 0).desc(),
-                    Material.source.desc(),
-                )
-                .first()
-            )
+            name_en_clean = _normalized_material_name(name_en)
+            material = materials_by_name_en.get(name_en_clean)
             if material:
                 matched_by = f"materials.name_en='{name_en}'"
 

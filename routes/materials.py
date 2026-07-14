@@ -1,12 +1,21 @@
+import math
+import re
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Material, UserMaterial
+from models import Material, MaterialSubstitution, UserMaterial
 
 router = APIRouter(prefix="/materials", tags=["材料库"])
+
+MOLECULE_FLOAT_FIELDS = (
+    "sio2", "al2o3", "fe2o3", "tio2", "cao", "mgo", "na2o", "k2o",
+    "zno", "b2o3", "p2o5", "li2o", "mno2", "coo", "sno2", "cuo",
+    "cr2o3", "pbo", "bao", "sro", "loi", "thermal_expansion",
+)
+MOLECULE_TEXT_FIELDS = ("name_en", "formula", "molecular_weight", "category")
 
 
 def _next_order(db: Session, user_id: int, status: str) -> int:
@@ -109,6 +118,162 @@ def _catalog_payload(material: Material) -> dict:
         "loi": material.loi,
         "thermal_expansion": material.thermal_expansion,
     }
+
+
+def _request_user_id(request: Request) -> int:
+    user_id = getattr(request.state, "user_id", None)
+    if not user_id:
+        raise HTTPException(status_code=401, detail="请先登录")
+    return user_id
+
+
+def _normalized_material_name(name: str) -> str:
+    """Compare material names after removing every Unicode whitespace character."""
+    return re.sub(r"\s+", "", str(name or ""))
+
+
+def _material_name_conflict(db: Session, name: str, exclude_id: int | None = None) -> Material | None:
+    normalized = _normalized_material_name(name)
+    if not normalized:
+        return None
+    query = db.query(Material)
+    if exclude_id is not None:
+        query = query.filter(Material.id != exclude_id)
+    for material in query.all():
+        if _normalized_material_name(material.name) == normalized:
+            return material
+    return None
+
+
+def _clean_molecule_data(data: dict, *, partial: bool = False) -> dict:
+    cleaned = {}
+    if not partial or "name" in data:
+        name = str(data.get("name", "")).strip()
+        if not _normalized_material_name(name):
+            raise HTTPException(status_code=400, detail="材料名不能为空")
+        if len(name) > 200:
+            raise HTTPException(status_code=400, detail="材料名不能超过200个字符")
+        cleaned["name"] = name
+
+    max_lengths = {"name_en": 200, "formula": 200, "molecular_weight": 50, "category": 50}
+    for field in MOLECULE_TEXT_FIELDS:
+        if field not in data:
+            continue
+        value = str(data.get(field) or "").strip()
+        if len(value) > max_lengths[field]:
+            raise HTTPException(status_code=400, detail=f"{field}内容过长")
+        cleaned[field] = value
+
+    for field in MOLECULE_FLOAT_FIELDS:
+        if field not in data:
+            continue
+        raw = data.get(field)
+        if raw in (None, ""):
+            cleaned[field] = None
+            continue
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail=f"{field}必须是数字")
+        if not math.isfinite(value):
+            raise HTTPException(status_code=400, detail=f"{field}必须是有效数字")
+        if field != "thermal_expansion" and not 0 <= value <= 100:
+            raise HTTPException(status_code=400, detail=f"{field}必须在0到100之间")
+        cleaned[field] = value
+    return cleaned
+
+
+@router.get("/molecules")
+def list_my_material_molecules(
+    request: Request,
+    q: str = Query(""),
+    page: int = Query(1, ge=1),
+    page_size: int = Query(50, ge=1, le=200),
+    db: Session = Depends(get_db),
+):
+    """List only material molecule records maintained by the signed-in user."""
+    user_id = _request_user_id(request)
+    query = db.query(Material).filter(Material.user_id == user_id)
+    if q:
+        keyword = f"%{q.strip()}%"
+        query = query.filter(or_(Material.name.ilike(keyword), Material.name_en.ilike(keyword)))
+    total = query.count()
+    items = (
+        query.order_by(Material.sort_order, Material.name, Material.id)
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {
+        "items": [_catalog_payload(item) for item in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.post("/molecules")
+def create_material_molecule(data: dict, request: Request, db: Session = Depends(get_db)):
+    user_id = _request_user_id(request)
+    cleaned = _clean_molecule_data(data)
+    if _material_name_conflict(db, cleaned["name"]):
+        raise HTTPException(status_code=409, detail="材料名已存在（忽略空白后不可重名）")
+    material = Material(
+        user_id=user_id,
+        source="user",
+        source_id=None,
+        is_analysis=1,
+        is_primitive=0,
+        **cleaned,
+    )
+    db.add(material)
+    db.commit()
+    db.refresh(material)
+    return _catalog_payload(material)
+
+
+@router.put("/molecules/{material_id}")
+def update_material_molecule(
+    material_id: int,
+    data: dict,
+    request: Request,
+    db: Session = Depends(get_db),
+):
+    user_id = _request_user_id(request)
+    material = db.query(Material).filter(
+        Material.id == material_id,
+        Material.user_id == user_id,
+    ).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="材料不存在或无权修改")
+    cleaned = _clean_molecule_data(data, partial=True)
+    if "name" in cleaned and _material_name_conflict(db, cleaned["name"], exclude_id=material.id):
+        raise HTTPException(status_code=409, detail="材料名已存在（忽略空白后不可重名）")
+    for field, value in cleaned.items():
+        setattr(material, field, value)
+    db.commit()
+    db.refresh(material)
+    return _catalog_payload(material)
+
+
+@router.delete("/molecules/{material_id}")
+def delete_material_molecule(material_id: int, request: Request, db: Session = Depends(get_db)):
+    user_id = _request_user_id(request)
+    material = db.query(Material).filter(
+        Material.id == material_id,
+        Material.user_id == user_id,
+    ).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="材料不存在或无权删除")
+    is_referenced = db.query(MaterialSubstitution.id).filter(or_(
+        MaterialSubstitution.source_material_id == material.id,
+        MaterialSubstitution.target_material_id == material.id,
+    )).first()
+    if is_referenced:
+        raise HTTPException(status_code=409, detail="该材料已有关联替代数据，暂不能删除")
+    db.delete(material)
+    db.commit()
+    return {"message": "已删除"}
 
 
 @router.get("/catalog")

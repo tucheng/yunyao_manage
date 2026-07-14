@@ -303,6 +303,7 @@ class Material(Base):
     __tablename__ = "materials"
 
     id = Column(Integer, primary_key=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
     name = Column(String(200), nullable=False, index=True)        # 中文名
     name_en = Column(String(200), default="")                      # 英文名
     source = Column(String(20), default="")                        # 'local' 或 'overseas'

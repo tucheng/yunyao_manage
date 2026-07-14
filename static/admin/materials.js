@@ -32,7 +32,8 @@ window.loadMaterials = function() {
           '<td style="font-size:12px;color:#666;max-width:160px;overflow:hidden;text-overflow:ellipsis">' + esc(m.formula || '-') + '</td>' +
           '<td><span class="badge ' + (m.source === 'local' ? 'badge-neutral' : 'badge-overseas') + '">' + srcLabel + '</span></td>' +
           '<td><button class="btn btn-sm" onclick="window.showSubstitutions(' + m.id + ')">相似品</button> ' +
-          '<button class="btn btn-sm btn-primary" onclick="window.showMaterialDetail(' + m.id + ')" style="margin-left:4px">详情</button></td>' +
+          '<button class="btn btn-sm btn-primary" onclick="window.showMaterialDetail(' + m.id + ')" style="margin-left:4px">详情</button> ' +
+          '<button class="btn btn-sm btn-danger" onclick="window.deleteMaterial(' + m.id + ')" style="margin-left:4px">删除</button></td>' +
           '</tr>';
       }).join('');
     }
@@ -43,6 +44,22 @@ window.loadMaterials = function() {
       '<span>第 ' + data.page + ' / ' + totalPages + ' 页</span>' +
       '<button class="btn btn-sm" onclick="window.materialPage++;window.loadMaterials()" ' + (window.materialPage >= totalPages ? 'disabled' : '') + '>›</button>';
   }).catch(function(e) { toast('加载失败: ' + (e.message || e), 'error'); });
+};
+
+window.deleteMaterial = function(id) {
+  var material = window.lastMaterialData.find(function(x) { return x.id === id; });
+  var name = material ? material.name : ('ID ' + id);
+  if (!confirm('确定删除材料“' + name + '”，此操作无法撤销！')) return;
+
+  api('/admin/materials/' + id, { method: 'DELETE' }).then(function() {
+    toast('材料已删除');
+    if (window.lastMaterialData.length === 1 && window.materialPage > 1) {
+      window.materialPage--;
+    }
+    window.loadMaterials();
+  }).catch(function(e) {
+    toast(e.message || '删除失败', 'error');
+  });
 };
 
 window.showSubstitutions = function(materialId) {
