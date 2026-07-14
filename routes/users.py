@@ -248,6 +248,18 @@ def get_view_status(
         if recipe and recipe.user_id == user_id:
             return {"can_view": True, "is_owner": True, "quota_consumed": False, "reason": ""}
 
+        # Reopening the same recipe on the same day never consumes another
+        # quota, so it must remain accessible even when remaining reaches 0.
+        from models import UserDailyRecipeView
+        from services.user_quota import business_today
+        already_viewed = db.query(UserDailyRecipeView.id).filter(
+            UserDailyRecipeView.user_id == user_id,
+            UserDailyRecipeView.recipe_id == recipe_id,
+            UserDailyRecipeView.view_date == business_today(),
+        ).first()
+        if already_viewed:
+            return {"can_view": True, "already_viewed": True, "quota_consumed": False, "reason": ""}
+
     from services.user_quota import get_or_create_quota
     quota, level = get_or_create_quota(db, user)
     db.commit()

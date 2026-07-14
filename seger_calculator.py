@@ -12,7 +12,7 @@ from datetime import datetime, timezone
 
 from sqlalchemy import func
 from sqlalchemy.orm import Session
-from encryption_utils import decrypt
+from security import decrypt
 from models import RecipeIngredient, Material, RecipeSeger, Recipe
 
 logger = logging.getLogger('yunyao')
@@ -476,7 +476,7 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
     oxide_moles_total = {col: 0.0 for col in OXIDE_COLUMNS}
     ingredient_details = []
     unmatched_names = []
-    skipped_additional = []
+    included_additional = []
     found_no_oxides = []
 
     for d in ingredient_data:
@@ -485,7 +485,7 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
         scaled_amount = d['amount'] * scale
 
         if d['is_additional']:
-            skipped_additional.append(name)
+            included_additional.append(name)
             # 仍参与 Seger 计算，附加材料也可能含氧化物
 
         # --- Look up material ---
@@ -608,7 +608,7 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
         'norm_factor': round(norm_factor, 6),
         'ingredient_details': ingredient_details,
         'unmatched': unmatched_names,
-        'skipped_additional': skipped_additional,
+        'included_additional': included_additional,
         'found_no_oxides': found_no_oxides,
         'total_grams': round(total_raw, 2),
         'scale': round(scale, 6),

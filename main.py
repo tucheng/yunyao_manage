@@ -63,7 +63,7 @@ app = FastAPI(
 def startup_downgrade():
     """启动时补跑日切维护，并在每天 0 点刷新等级与额度。"""
     from database import SessionLocal
-    from services.user_quota import ensure_system_levels, run_daily_maintenance
+    from services.user_quota import business_today, ensure_system_levels, run_daily_maintenance
 
     # 启动时执行一次
     try:
@@ -79,20 +79,19 @@ def startup_downgrade():
     import threading
 
     def _nightly_check():
+        last_maintenance_date = business_today()
         while True:
-            now = time.localtime()
-            tomorrow = time.struct_time((
-                now.tm_year, now.tm_mon, now.tm_mday + 1,
-                0, 0, 0, now.tm_wday, now.tm_yday, now.tm_isdst
-            ))
-            sleep_sec = time.mktime(tomorrow) - time.mktime(now)
-            if sleep_sec < 0:
-                sleep_sec += 86400
-            time.sleep(sleep_sec)
+            # Do not depend on the host/container timezone. Polling also
+            # catches clock jumps and a process suspended across midnight.
+            time.sleep(30)
+            current_date = business_today()
+            if current_date == last_maintenance_date:
+                continue
             try:
                 db = SessionLocal()
                 downgraded, refreshed = run_daily_maintenance(db)
                 db.close()
+                last_maintenance_date = current_date
                 logger.info(f"[每日维护] 降级 {downgraded} 人，刷新额度 {refreshed} 人")
             except Exception as e:
                 logger.error(f"[过期降级] 定时执行失败: {e}")

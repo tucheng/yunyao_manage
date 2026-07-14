@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from typing import Literal
+from zoneinfo import ZoneInfo
 
 from fastapi import HTTPException
 from sqlalchemy.orm import Session
@@ -17,6 +18,12 @@ SYSTEM_LEVEL_NAMES = {
 }
 
 QuotaKind = Literal["recipe", "work", "recipe_view"]
+BUSINESS_TIMEZONE = ZoneInfo("Asia/Shanghai")
+
+
+def business_today() -> date:
+    """Return the quota date in the product's business timezone."""
+    return datetime.now(BUSINESS_TIMEZONE).date()
 
 _REMAINING_FIELD = {
     "recipe": "recipe_remaining",
@@ -77,7 +84,7 @@ def get_or_create_quota(
     for_update: bool = False,
     force_reset: bool = False,
 ) -> tuple[UserUsageQuota, UserLevel]:
-    today = date.today()
+    today = business_today()
     previous_level_id = user.level_id
     level = _level_for_user(db, user)
     force_reset = force_reset or user.level_id != previous_level_id
@@ -117,7 +124,7 @@ def consume_quota(db: Session, user: User, kind: QuotaKind) -> int:
 
 
 def consume_recipe_view_once(db: Session, user: User, recipe_id: int) -> tuple[bool, int]:
-    today = date.today()
+    today = business_today()
     quota, _ = get_or_create_quota(db, user, for_update=True)
     viewed = db.query(UserDailyRecipeView).filter(
         UserDailyRecipeView.user_id == user.id,
@@ -169,7 +176,7 @@ def run_daily_maintenance(db: Session) -> tuple[int, int]:
         if downgrade_user_if_expired(user, now):
             downgraded += 1
         quota = db.query(UserUsageQuota).filter(UserUsageQuota.user_id == user.id).first()
-        if upgraded_from_redeem or quota is None or quota.quota_date != date.today():
+        if upgraded_from_redeem or quota is None or quota.quota_date != business_today():
             get_or_create_quota(db, user, force_reset=True)
             refreshed += 1
     db.commit()

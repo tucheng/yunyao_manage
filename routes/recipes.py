@@ -861,7 +861,7 @@ def get_recipe(
 def _parse_seger_detail(detail_json: str) -> dict:
     """Parse seger_detail JSON and extract summary fields."""
     if not detail_json or detail_json == "{}":
-        return {"unmatched": [], "skipped_additional": [], "found_no_oxides": [],
+        return {"unmatched": [], "included_additional": [], "found_no_oxides": [],
                 "surface_prediction": {"surface": "", "note": ""},
                 "firing_temp": {"cone": "", "temp_range": "", "note": ""},
                 "thermal_expansion": {"na_k_ratio": 0, "details": []},
@@ -871,7 +871,11 @@ def _parse_seger_detail(detail_json: str) -> dict:
         detail = json.loads(detail_json)
         return {
             "unmatched": detail.get("unmatched", []),
-            "skipped_additional": detail.get("skipped_additional", []),
+            # Older saved calculations used a misleading key name even though
+            # additives were included in the oxide accumulation.
+            "included_additional": detail.get(
+                "included_additional", detail.get("skipped_additional", [])
+            ),
             "found_no_oxides": detail.get("found_no_oxides", []),
             "surface_prediction": detail.get("surface_prediction", {"surface": "", "note": ""}),
             "firing_temp": detail.get("firing_temp", {"cone": "", "temp_range": "", "note": ""}),
@@ -880,7 +884,7 @@ def _parse_seger_detail(detail_json: str) -> dict:
             "oxide_contributions": detail.get("oxide_contributions", {}),
         }
     except (json.JSONDecodeError, TypeError):
-        return {"unmatched": [], "skipped_additional": [], "found_no_oxides": [],
+        return {"unmatched": [], "included_additional": [], "found_no_oxides": [],
                 "surface_prediction": {"surface": "", "note": ""},
                 "firing_temp": {"cone": "", "temp_range": "", "note": ""},
                 "thermal_expansion": {"na_k_ratio": 0, "details": []},
@@ -897,7 +901,7 @@ def get_recipe_seger(recipe_id: int, db: Session = Depends(get_db)):
 
     seger = db.query(RecipeSeger).filter(RecipeSeger.recipe_id == recipe_id).first()
     if not seger:
-        detail_info = {"unmatched": [], "skipped_additional": [], "found_no_oxides": []}
+        detail_info = {"unmatched": [], "included_additional": [], "found_no_oxides": []}
         return {
             "recipe_id": recipe_id,
             "seger_unified": "",

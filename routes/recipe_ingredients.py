@@ -3,7 +3,7 @@ from sqlalchemy import text, func
 from sqlalchemy.orm import Session
 from database import get_db
 from auth_utils import user_id_from_request
-from models import RecipeIngredient, Recipe, IngredientName, Material
+from models import RecipeIngredient, Recipe, IngredientName, Material, User
 from schemas import RecipeIngredientOut
 from security import encrypt, decrypt, hash_for_lookup
 from seger_calculator import calculate_seger
@@ -22,6 +22,8 @@ def get_ingredients(recipe_id: int, request: Request, db: Session = Depends(get_
         raise HTTPException(status_code=404, detail="配方不存在")
 
     current_user_id = user_id_from_request(request)
+    if not current_user_id:
+        raise HTTPException(status_code=401, detail="请先登录")
     is_owner = bool(current_user_id and recipe.user_id == current_user_id)
 
     if recipe.visibility not in ("public", "showoff") and not is_owner:
@@ -29,6 +31,14 @@ def get_ingredients(recipe_id: int, request: Request, db: Session = Depends(get_
 
     if recipe.visibility == "showoff" and not is_owner:
         return []
+
+    if not is_owner:
+        from services.user_quota import consume_recipe_view_once
+        user = db.query(User).filter(User.id == current_user_id).first()
+        if not user:
+            raise HTTPException(status_code=404, detail="用户不存在")
+        consume_recipe_view_once(db, user, recipe_id)
+        db.commit()
 
     rows = (
         db.query(RecipeIngredient)
