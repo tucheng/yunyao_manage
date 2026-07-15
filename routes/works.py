@@ -559,6 +559,8 @@ def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
     surface = data.get("surface", "")
     transparency = data.get("transparency", "")
     curve_id = data.get("curve_id") or None
+    if curve_id and not db.query(FiringCurve).filter(FiringCurve.id == curve_id, FiringCurve.user_id == user_id).first():
+        raise HTTPException(status_code=400, detail="烧制曲线不存在或不属于当前用户")
 
     # 处理釉色
     glaze_colors_raw = data.get("glaze_colors") or None
@@ -640,6 +642,9 @@ def create_work(
     
     if not user_id:
         raise HTTPException(status_code=400, detail="用户未登录")
+
+    if curve_id and not db.query(FiringCurve).filter(FiringCurve.id == curve_id, FiringCurve.user_id == user_id).first():
+        raise HTTPException(status_code=400, detail="烧制曲线不存在或不属于当前用户")
 
     user = db.query(User).filter(User.id == user_id).first()
     if not user:

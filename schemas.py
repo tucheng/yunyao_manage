@@ -20,6 +20,7 @@ class RecipeCreate(BaseModel):
     work_id: int = 0
     forked_from: Optional[int] = None
     glaze_colors: Optional[str] = None  # JSON: [{hex, r, g, b, name}]
+    curve_id: Optional[int] = None
 
 
 class RecipeUpdate(BaseModel):
@@ -38,6 +39,7 @@ class RecipeUpdate(BaseModel):
     visibility: Optional[str] = None
     forked_from: Optional[int] = None
     glaze_colors: Optional[str] = None
+    curve_id: Optional[int] = None
 
 class RecipeOut(BaseModel):
     id: int
@@ -71,6 +73,9 @@ class RecipeOut(BaseModel):
     is_liked: bool = False
     ingredient_statuses: Optional[dict] = None
     glaze_colors: Optional[str] = "[]"  # JSON: [{hex, r, g, b, name}]
+    curve_id: Optional[int] = None
+    curve_name: Optional[str] = ""
+    curve_data: Optional[dict] = None
 
     model_config = {"from_attributes": True}
 

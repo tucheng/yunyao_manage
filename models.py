@@ -79,6 +79,7 @@ class Recipe(Base):
     surface = Column(String(30), default="")  # 釉面质感
     transparency = Column(String(30), default="")  # 透明度
     glaze_colors = Column(Text, default="[]")  # JSON: [{hex, r, g, b, name}]
+    curve_id = Column(Integer, ForeignKey("firing_curves.id", ondelete="SET NULL"), nullable=True)  # 可选关联烧制曲线
 
 
 class Review(Base):

@@ -60,6 +60,11 @@ def update_settings(
     if body.temperatures is not None:
         settings.temperatures = json.dumps(body.temperatures, ensure_ascii=False)
     if body.firing_curve_id is not None:
+        if body.firing_curve_id and not db.query(FiringCurve).filter(
+            FiringCurve.id == body.firing_curve_id,
+            FiringCurve.user_id == user_id,
+        ).first():
+            raise HTTPException(status_code=400, detail="烧制曲线不存在或不属于当前用户")
         settings.firing_curve_id = body.firing_curve_id or None
     if body.body_material is not None:
         settings.body_material = body.body_material
@@ -69,9 +74,11 @@ def update_settings(
 
 
 @router.get("/curves")
-def list_curves(db: Session = Depends(get_db)):
-    """获取所有烧制曲线（供设置页面选择）"""
-    curves = db.query(FiringCurve).order_by(FiringCurve.sort_order, FiringCurve.name).all()
+def list_curves(user_id: int = Query(...), db: Session = Depends(get_db)):
+    """获取当前用户的烧制曲线（供设置页面选择）"""
+    curves = db.query(FiringCurve).filter(
+        FiringCurve.user_id == user_id,
+    ).order_by(FiringCurve.sort_order, FiringCurve.name).all()
     return [
         {
             "id": c.id,

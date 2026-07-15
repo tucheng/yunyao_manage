@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import AppSetting, Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion
+from models import AppSetting, Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion, FiringCurve
 from schemas import (
     RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
     ReviewCreate, ReviewOut,
@@ -92,6 +92,18 @@ def get_recipe(
         Work.recipe_id == recipe_id,
     ).count()
 
+    curve = None
+    if recipe.curve_id:
+        curve = db.query(FiringCurve).filter(FiringCurve.id == recipe.curve_id).first()
+    recipe.curve_name = curve.name if curve else ""
+    recipe.curve_data = {
+        "name": curve.name,
+        "type": curve.type,
+        "target_temp": curve.target_temp,
+        "segments": json.loads(curve.segments) if curve.segments else [],
+        "description": curve.description or "",
+    } if curve else None
+
     # 原料状态表（减少前端的额外查询）
     recipe.ingredient_statuses = {}
     if current_user_id > 0:
@@ -179,4 +191,3 @@ def get_recipe_seger(recipe_id: int, request: Request, db: Session = Depends(get
         "calculated_at": seger.calculated_at.isoformat() if seger.calculated_at else None,
         **detail_info,
     }
-

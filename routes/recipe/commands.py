@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
-from models import AppSetting, Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion
+from models import AppSetting, Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion, FiringCurve
 from schemas import (
     RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
     ReviewCreate, ReviewOut,
@@ -22,6 +22,18 @@ logger = logging.getLogger('yunyao')
 router = APIRouter(dependencies=[Depends(current_user)])
 
 from services.recipe_number import generate_recipe_no
+
+
+def _owned_curve_id(db: Session, curve_id: int | None, user_id: int) -> int | None:
+    if not curve_id:
+        return None
+    curve = db.query(FiringCurve).filter(
+        FiringCurve.id == curve_id,
+        FiringCurve.user_id == user_id,
+    ).first()
+    if not curve:
+        raise HTTPException(status_code=400, detail="烧制曲线不存在或不属于当前用户")
+    return curve.id
 
 @router.post("/", response_model=RecipeOut)
 def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session = Depends(get_db)):
@@ -79,6 +91,7 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         visibility=recipe.visibility if recipe.visibility in ("public", "private", "showoff") else "private",
         forked_from=recipe.forked_from,
         glaze_colors=glaze_colors_json,
+        curve_id=_owned_curve_id(db, recipe.curve_id, user_id),
     )
     db.add(db_recipe)
     db.commit()
@@ -114,6 +127,8 @@ def update_recipe(
     snapshot_recipe(recipe_id, db, note="编辑配方信息", user_id=user_id)
 
     update_data = recipe.model_dump(exclude_unset=True)
+    if "curve_id" in update_data:
+        update_data["curve_id"] = _owned_curve_id(db, update_data["curve_id"], user_id)
     if "cover" in update_data or "images" in update_data:
         cover = normalize_image_url(update_data.get("cover", db_recipe.cover))
         images = parse_image_list(update_data.get("images", db_recipe.images))

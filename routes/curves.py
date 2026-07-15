@@ -31,27 +31,29 @@ class CurveUpdate(BaseModel):
 # ===== 新用户注册默认曲线 =====
 DEFAULT_USER_CURVES = [
     {
-        "name": "标准瓷器",
-        "type": "还原",
-        "target_temp": "1280℃",
-        "description": "标准瓷器烧制曲线，还原气氛△9-10，适合多数瓷泥和还原釉",
+        "name": "普通中温电窑烧制曲线",
+        "type": "氧化",
+        "target_temp": "1220℃",
+        "description": "适用于普通中温电窑的通用烧制曲线",
         "segments": json.dumps([
-            {"rate": 80, "temp": 600, "hold": 0},
-            {"rate": 100, "temp": 900, "hold": 0},
-            {"rate": 80, "temp": 1280, "hold": 20},
-        ]),
+            {"temp": 600, "time": 360, "status": "升温"},
+            {"temp": 1000, "time": 240, "status": "升温"},
+            {"temp": 1220, "time": 180, "status": "升温"},
+            {"temp": 1220, "time": 15, "status": "保温"},
+        ], ensure_ascii=False),
         "sort_order": 0,
     },
     {
-        "name": "陶罐",
+        "name": "陶泥烧制曲线数据",
         "type": "氧化",
         "target_temp": "1050℃",
-        "description": "标准陶器烧制曲线，氧化气氛，适合陶泥和低温釉",
+        "description": "适用于陶泥和低温釉的氧化烧制曲线",
         "segments": json.dumps([
-            {"rate": 100, "temp": 500, "hold": 0},
-            {"rate": 150, "temp": 800, "hold": 0},
-            {"rate": 120, "temp": 1050, "hold": 15},
-        ]),
+            {"temp": 500, "time": 300, "status": "升温"},
+            {"temp": 800, "time": 120, "status": "升温"},
+            {"temp": 1050, "time": 150, "status": "升温"},
+            {"temp": 1050, "time": 15, "status": "保温"},
+        ], ensure_ascii=False),
         "sort_order": 1,
     },
 ]
@@ -59,7 +61,12 @@ DEFAULT_USER_CURVES = [
 
 def create_default_user_curves(db: Session, user_id: int):
     """为新用户添加默认烧制曲线"""
+    existing_names = {
+        row[0] for row in db.query(FiringCurve.name).filter(FiringCurve.user_id == user_id).all()
+    }
     for c in DEFAULT_USER_CURVES:
+        if c["name"] in existing_names:
+            continue
         curve = FiringCurve(
             user_id=user_id,
             name=c["name"],
