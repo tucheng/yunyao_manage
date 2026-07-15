@@ -282,7 +282,7 @@ def get_view_status(
         "today_views": today_views,
         "max_views": max_views,
         "remaining": max(0, remaining),
-        "reason": f"今日查看配方已达上限（{max_views}个），明天再来看吧" if not can_view else "",
+        "reason": f"今日查看配方已达上限，明天再来看吧" if not can_view else "",
     }
 
 
