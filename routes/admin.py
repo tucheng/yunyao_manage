@@ -1,10 +1,11 @@
 import json
+from datetime import datetime, time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
-from sqlalchemy import func, or_
+from sqlalchemy import and_, exists, func, or_
 from database import get_db
-from models import AppSetting, User, UserLevel, Recipe, Work, Notification, WorkAttributeOption, Material, MaterialSubstitution
+from models import AppSetting, Complaint, ComplaintReply, User, UserLevel, Recipe, Work, Notification, WorkAttributeOption, Material, MaterialSubstitution
 from pydantic import BaseModel
 from typing import Optional
 from app_config import ADMIN_USER_IDS
@@ -14,6 +15,7 @@ from verification_sender import get_settings as get_verification_settings, save_
 from color_names import get_color_range_config
 from routes.works import TEMPERATURE_RANGE_CONFIG
 from services.user_quota import SYSTEM_LEVEL_NAMES, reset_user_quota
+from routes.complaints import serialize_complaint
 
 router = APIRouter(prefix="/admin", tags=["后台管理"])
 
@@ -539,3 +541,147 @@ def admin_delete_material(
         "message": "材料已删除",
         "deleted_substitutions": deleted_substitutions,
     }
+
+
+# ========= 投诉处理 =========
+
+class AdminComplaintReplyBody(BaseModel):
+    content: str
+
+
+class AdminComplaintClosedBody(BaseModel):
+    closed: bool
+
+
+def _parse_filter_date(value: Optional[str], end_of_day: bool = False) -> Optional[datetime]:
+    if not value:
+        return None
+    try:
+        day = datetime.strptime(value, "%Y-%m-%d").date()
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail="日期格式应为 YYYY-MM-DD") from exc
+    return datetime.combine(day, time.max if end_of_day else time.min)
+
+
+@router.get("/complaints")
+def admin_list_complaints(
+    q: str = "",
+    answered: Optional[bool] = None,
+    resolved: Optional[bool] = None,
+    closed: Optional[bool] = None,
+    date_from: Optional[str] = None,
+    date_to: Optional[str] = None,
+    page: int = Query(1, ge=1),
+    page_size: int = Query(20, ge=1, le=100),
+    _admin=Depends(verify_admin),
+    db: Session = Depends(get_db),
+):
+    query = db.query(Complaint).join(User, User.id == Complaint.user_id)
+    keyword = q.strip()
+    if keyword:
+        like = f"%{keyword}%"
+        query = query.filter(or_(
+            Complaint.content.like(like),
+            User.nickname.like(like),
+            User.username.like(like),
+        ))
+
+    has_thread_reply = exists().where(ComplaintReply.complaint_id == Complaint.id)
+    has_legacy_reply = and_(Complaint.reply.is_not(None), Complaint.reply != "")
+    if answered is True:
+        query = query.filter(or_(has_legacy_reply, has_thread_reply))
+    elif answered is False:
+        query = query.filter(~or_(has_legacy_reply, has_thread_reply))
+    if resolved is not None:
+        query = query.filter(Complaint.is_resolved.is_(resolved))
+    if closed is not None:
+        query = query.filter(Complaint.is_closed.is_(closed))
+
+    start = _parse_filter_date(date_from)
+    end = _parse_filter_date(date_to, end_of_day=True)
+    if start:
+        query = query.filter(Complaint.created_at >= start)
+    if end:
+        query = query.filter(Complaint.created_at <= end)
+
+    total = query.count()
+    items = (
+        query.order_by(Complaint.created_at.desc(), Complaint.id.desc())
+        .offset((page - 1) * page_size)
+        .limit(page_size)
+        .all()
+    )
+    return {
+        "results": [serialize_complaint(item, db, include_user=True) for item in items],
+        "total": total,
+        "page": page,
+        "page_size": page_size,
+    }
+
+
+@router.get("/complaints/{complaint_id}")
+def admin_get_complaint(
+    complaint_id: int,
+    _admin=Depends(verify_admin),
+    db: Session = Depends(get_db),
+):
+    item = db.query(Complaint).filter(Complaint.id == complaint_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="反馈不存在")
+    return serialize_complaint(item, db, include_user=True)
+
+
+@router.post("/complaints/{complaint_id}/replies")
+def admin_reply_complaint(
+    complaint_id: int,
+    body: AdminComplaintReplyBody,
+    request: Request,
+    _admin=Depends(verify_admin),
+    db: Session = Depends(get_db),
+):
+    content = (body.content or "").strip()
+    if not content:
+        raise HTTPException(status_code=400, detail="回复内容不能为空")
+    item = db.query(Complaint).filter(Complaint.id == complaint_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="反馈不存在")
+
+    token = token_from_request(request)
+    payload = decode_access_token(token)
+    admin_id = int(payload.get("sub", 0))
+    reply = ComplaintReply(
+        complaint_id=item.id,
+        admin_id=admin_id,
+        content=content[:1000],
+    )
+    db.add(reply)
+    item.reply = content[:1000]
+    item.admin_id = admin_id
+    item.replied_at = datetime.utcnow()
+    item.status = "resolved" if item.is_resolved else "replied"
+    db.commit()
+    db.refresh(item)
+    return serialize_complaint(item, db, include_user=True)
+
+
+@router.put("/complaints/{complaint_id}/closed")
+def admin_update_complaint_closed(
+    complaint_id: int,
+    body: AdminComplaintClosedBody,
+    request: Request,
+    _admin=Depends(verify_admin),
+    db: Session = Depends(get_db),
+):
+    item = db.query(Complaint).filter(Complaint.id == complaint_id).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="反馈不存在")
+
+    token = token_from_request(request)
+    payload = decode_access_token(token)
+    admin_id = int(payload.get("sub", 0))
+    item.is_closed = body.closed
+    item.closed_at = datetime.utcnow() if body.closed else None
+    item.closed_by = admin_id if body.closed else None
+    db.commit()
+    db.refresh(item)
+    return serialize_complaint(item, db, include_user=True)

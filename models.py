@@ -258,6 +258,22 @@ class Complaint(Base):
     reply = Column(Text, default="")
     admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)
     replied_at = Column(DateTime(timezone=True), nullable=True)
+    is_resolved = Column(Boolean, default=False, nullable=False)
+    resolved_at = Column(DateTime(timezone=True), nullable=True)
+    is_closed = Column(Boolean, default=False, nullable=False)
+    closed_at = Column(DateTime(timezone=True), nullable=True)
+    closed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_at = Column(DateTime(timezone=True), server_default=func.now())
+
+
+class ComplaintReply(Base):
+    """An administrator reply in a complaint's conversation history."""
+    __tablename__ = "complaint_replies"
+
+    id = Column(Integer, primary_key=True, index=True)
+    complaint_id = Column(Integer, ForeignKey("complaints.id"), nullable=False, index=True)
+    admin_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 

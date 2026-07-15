@@ -136,6 +136,12 @@ tr:hover { background: #fafafa; }
         </div>
       </div>
       <div class="menu-group">
+        <button class="menu-cat-btn" data-menu="operation" onclick="toggleCatMenu('operation')">运营管理 ▾</button>
+        <div class="cat-dropdown" id="cat-operation">
+          <a onclick="switchTab('complaints')">投诉处理</a>
+        </div>
+      </div>
+      <div class="menu-group">
         <button class="menu-cat-btn" data-menu="sys" onclick="toggleCatMenu('sys')">系统设置 ▾</button>
         <div class="cat-dropdown" id="cat-sys">
           <a onclick="switchTab('verification')">验证码配置</a>

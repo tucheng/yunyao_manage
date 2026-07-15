@@ -307,9 +307,14 @@
 ### 投诉建议 (complaints) — 前缀 `/complaints`
 | 方法 | 路径 | 说明 | 参数 |
 |------|------|------|------|
-| GET | `/complaints` | 投诉列表 | `user_id` |
+| GET | `/complaints` | 当前用户投诉列表（含多轮答复与状态） | `user_id` |
 | POST | `/complaints` | 提交投诉 | body: `{ user_id, content, images? }` |
-| POST | `/complaints/{complaint_id}/reply` | 管理员回复 | body: `{ admin_id, reply }` |
+| PUT | `/complaints/{complaint_id}/resolved` | 提问人标记已解决/未解决 | body: `{ resolved }` |
+| POST | `/complaints/{complaint_id}/reply` | 管理员回复（兼容接口） | body: `{ reply }` |
+| GET | `/admin/complaints` | 后台投诉列表与筛选 | `q, answered, resolved, closed, date_from, date_to, page, page_size` |
+| GET | `/admin/complaints/{complaint_id}` | 后台投诉详情 | - |
+| POST | `/admin/complaints/{complaint_id}/replies` | 后台追加答复 | body: `{ content }` |
+| PUT | `/admin/complaints/{complaint_id}/closed` | 后台关闭/重新打开 | body: `{ closed }` |
 
 ---
 

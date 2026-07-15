@@ -1,0 +1,57 @@
+<style>
+.complaint-filters { display:grid; grid-template-columns:minmax(180px,1.6fr) repeat(3,minmax(110px,.7fr)) repeat(2,minmax(135px,.8fr)) auto; gap:8px; margin-bottom:14px; }
+.complaint-filters input, .complaint-filters select { width:100%; padding:8px 10px; border:1px solid #ddd; border-radius:8px; background:#fff; font-size:13px; }
+.complaint-table-wrap { overflow-x:auto; }
+.complaint-summary { max-width:340px; line-height:1.55; word-break:break-word; }
+.complaint-user { min-width:110px; }
+.complaint-user small { display:block; margin-top:3px; color:#999; }
+.status-pill { display:inline-block; padding:3px 8px; border-radius:10px; font-size:12px; white-space:nowrap; }
+.status-yes { background:#e8f6ee; color:#26734d; }
+.status-no { background:#fff3df; color:#946216; }
+.status-closed { background:#e8e4df; color:#555; }
+.status-open { background:#edf4fb; color:#32698f; }
+.complaint-detail-head { display:flex; justify-content:space-between; gap:16px; align-items:flex-start; }
+.complaint-detail-meta { margin:6px 0 16px; color:#888; font-size:13px; }
+.complaint-detail-content { padding:14px; border-radius:8px; background:#f7f6f4; line-height:1.7; white-space:pre-wrap; word-break:break-word; }
+.complaint-images { display:flex; flex-wrap:wrap; gap:8px; margin-top:12px; }
+.complaint-images img { width:92px; height:92px; border-radius:7px; object-fit:cover; cursor:pointer; }
+.reply-thread { margin-top:18px; }
+.reply-card { padding:11px 13px; border-left:3px solid #2c3e50; border-radius:6px; background:#f7f8f8; margin-top:8px; }
+.reply-card + .reply-card { margin-top:8px; }
+.reply-card small { display:block; color:#999; margin-bottom:5px; }
+.reply-editor { margin-top:18px; padding-top:16px; border-top:1px solid #eee; }
+.reply-editor textarea { width:100%; min-height:96px; padding:10px 12px; border:1px solid #ddd; border-radius:8px; resize:vertical; font-size:14px; }
+@media (max-width: 900px) { .complaint-filters { grid-template-columns:1fr 1fr; } }
+</style>
+
+<div class="card">
+  <div class="config-toolbar">
+    <div>
+      <h2>投诉处理</h2>
+      <div class="help">查看用户投诉建议、跟进答复并维护后台关闭标记。</div>
+    </div>
+  </div>
+  <div class="complaint-filters">
+    <input id="complaintKeyword" placeholder="搜索描述、昵称或用户名" onkeydown="if(event.key==='Enter')window.loadComplaints(1)">
+    <select id="complaintAnswered"><option value="">答复状态：全部</option><option value="false">未答复</option><option value="true">已答复</option></select>
+    <select id="complaintResolved"><option value="">解决状态：全部</option><option value="false">未解决</option><option value="true">已解决</option></select>
+    <select id="complaintClosed"><option value="">关闭状态：全部</option><option value="false">未关闭</option><option value="true">已关闭</option></select>
+    <input id="complaintDateFrom" type="date" title="开始日期">
+    <input id="complaintDateTo" type="date" title="结束日期">
+    <button class="btn btn-primary" onclick="window.loadComplaints(1)">筛选</button>
+  </div>
+  <div class="complaint-table-wrap">
+    <table>
+      <thead><tr><th>问题描述</th><th>提问人员</th><th>时间</th><th>答复状态</th><th>解决状态</th><th>关闭状态</th><th>操作</th></tr></thead>
+      <tbody id="complaintTableBody"></tbody>
+    </table>
+  </div>
+  <div class="pagination" id="complaintPagination"></div>
+</div>
+
+<div class="modal" id="complaintDetailModal">
+  <div class="modal-content" style="max-width:760px">
+    <div id="complaintDetailBody"></div>
+    <div style="margin-top:18px;text-align:right"><button class="btn" onclick="closeModal('complaintDetailModal')">关闭详情</button></div>
+  </div>
+</div>
