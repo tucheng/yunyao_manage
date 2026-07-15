@@ -86,14 +86,15 @@ def following_works(
     result = []
     for work in rows:
         user = db.query(User).filter(User.id == work.user_id).first()
+        primary_image, images = _sanitize_work_images(work.image, work.images)
         result.append({
             "id": work.id,
             "user_id": work.user_id,
             "nickname": user.nickname if user else f"用户{work.user_id}",
             "avatar": user.avatar if user else "",
             "recipe_id": work.recipe_id,
-            "image": _image_url(work.image),
-            "images": parse_image_list(work.images),
+            "image": primary_image,
+            "images": images,
             "description": work.description or "",
             "category": work.category or "",
             "atmosphere": work.atmosphere or "",
@@ -110,8 +111,20 @@ def following_works(
     return result
 
 
-def _image_url(image: str) -> str:
-    return normalize_image_url(image)
+def _is_persisted_image_url(image: str) -> bool:
+    normalized = normalize_image_url(image)
+    return normalized.startswith(("http://", "https://", "/uploads/", "/media/"))
+
+
+def _sanitize_work_images(image, images) -> tuple[str, list[str]]:
+    """Drop browser-local URLs and return a durable primary image plus image list."""
+    candidates = [normalize_image_url(image), *parse_image_list(images)]
+    durable: list[str] = []
+    for candidate in candidates:
+        normalized = normalize_image_url(candidate)
+        if _is_persisted_image_url(normalized) and normalized not in durable:
+            durable.append(normalized)
+    return (durable[0] if durable else ""), durable
 
 
 # 初始化表
@@ -463,10 +476,7 @@ def list_works(
 
     result = []
     for work, user, recipe, comment_count, favorite_count in rows:
-        # 解析多图
-        imgs = parse_image_list(work.images)
-        if not imgs and work.image:
-            imgs = [work.image]
+        image, imgs = _sanitize_work_images(work.image, work.images)
         result.append({
             "id": work.id,
             "user_id": work.user_id,
@@ -474,8 +484,8 @@ def list_works(
             "avatar": user.avatar if user else "",
             "recipe_id": work.recipe_id,
             "recipe_title": recipe.title if recipe else "",
-            "image": _image_url(work.image),
-            "images": [_image_url(u) for u in imgs if u],
+            "image": image,
+            "images": imgs,
             "description": work.description or "",
             "category": work.category or "",
             "atmosphere": work.atmosphere or "",
@@ -506,7 +516,9 @@ def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
     if not user_id or work.user_id != user_id:
         raise HTTPException(status_code=403, detail="无权编辑")
 
-    image = normalize_image_url(data.get("image"))
+    image, images_raw = _sanitize_work_images(data.get("image"), data.get("images"))
+    if not image:
+        raise HTTPException(status_code=400, detail="作品图片不能为空或为无效临时地址")
     recipe_id = data.get("recipe_id") or None
     description = data.get("description", "")
     category = data.get("category", "")
@@ -517,11 +529,6 @@ def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
     surface = data.get("surface", "")
     transparency = data.get("transparency", "")
     curve_id = data.get("curve_id") or None
-
-    # 处理多图
-    images_raw = parse_image_list(data.get("images"))
-    if image and image not in images_raw:
-        images_raw.insert(0, image)
 
     # 处理釉色
     glaze_colors_raw = data.get("glaze_colors") or None
@@ -592,7 +599,7 @@ def create_work(
     db: Session = Depends(get_db),
 ):
     """发布作品"""
-    image = normalize_image_url(data.get("image"))
+    image, images_raw = _sanitize_work_images(data.get("image"), data.get("images"))
     user_id = data.get("user_id", 0)
     recipe_id = data.get("recipe_id") or None
     description = data.get("description", "")
@@ -606,7 +613,7 @@ def create_work(
     curve_id = data.get("curve_id") or None
     
     if not image:
-        raise HTTPException(status_code=400, detail="作品图片不能为空")
+        raise HTTPException(status_code=400, detail="作品图片不能为空或为无效临时地址")
     
     if not user_id:
         raise HTTPException(status_code=400, detail="用户未登录")
@@ -616,11 +623,6 @@ def create_work(
         raise HTTPException(status_code=404, detail="用户不存在")
     from services.user_quota import consume_quota
     consume_quota(db, user, "work")
-
-    # 处理多图
-    images_raw = parse_image_list(data.get("images"))
-    if image and image not in images_raw:
-        images_raw.insert(0, image)
 
     # 处理釉色数据
     glaze_colors_raw = data.get("glaze_colors") or None
@@ -764,10 +766,7 @@ def get_work(work_id: int, current_user_id: int = 0, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="作品不存在")
 
     work, user, recipe, curve = row
-    # 解析多图
-    imgs = parse_image_list(work.images)
-    if not imgs and work.image:
-        imgs = [work.image]
+    image, imgs = _sanitize_work_images(work.image, work.images)
     favorite_count = db.query(Favorite).filter(Favorite.work_id == work.id).count()
     is_favorited = False
     if current_user_id > 0:
@@ -789,8 +788,8 @@ def get_work(work_id: int, current_user_id: int = 0, db: Session = Depends(get_d
         "recipe_id": work.recipe_id,
         "recipe_title": recipe.title if recipe else "",
         "recipe_cover": normalize_image_url(recipe.cover) if recipe else "",
-        "image": _image_url(work.image),
-        "images": [_image_url(u) for u in imgs if u],
+        "image": image,
+        "images": imgs,
         "description": work.description or "",
         "category": work.category or "",
         "atmosphere": work.atmosphere or "",
