@@ -1,30 +1,14 @@
-"""Compute material substitution similarities and store in DB.
-Uses weighted cosine similarity on all oxide columns."""
-import math
+"""Compute material similarities from actual oxide percentage differences."""
 import sys
 sys.path.insert(0, '.')
 from database import SessionLocal
 from models import Material, MaterialSubstitution
-
-# All oxide columns used for similarity calculation (weighted equally per column)
-OXIDE_COLS = ['sio2', 'al2o3', 'fe2o3', 'tio2', 'cao', 'mgo',
-              'na2o', 'k2o', 'zno', 'b2o3', 'p2o5',
-              'li2o', 'mno2', 'coo', 'sno2', 'cuo', 'cr2o3', 'pbo', 'bao', 'sro']
-
-TOP_N = 8  # Keep top N substitutes per material
-
-def get_oxide_vector(material):
-    """Extract oxide vector, filling None with 0."""
-    return [float(getattr(material, col, 0) or 0) for col in OXIDE_COLS]
-
-def cosine_similarity(v1, v2):
-    """Weighted cosine similarity. Returns 0-100 score."""
-    dot = sum(a * b for a, b in zip(v1, v2))
-    n1 = math.sqrt(sum(a * a for a in v1))
-    n2 = math.sqrt(sum(b * b for b in v2))
-    if n1 == 0 or n2 == 0:
-        return 0.0
-    return round(dot / (n1 * n2) * 100, 2)
+from services.material_similarity import (
+    TOP_SIMILAR_MATERIALS,
+    has_oxide_data,
+    oxide_profile,
+    oxide_similarity,
+)
 
 db = SessionLocal()
 try:
@@ -35,8 +19,8 @@ try:
     # Pre-compute vectors
     mat_data = []
     for m in all_mats:
-        vec = get_oxide_vector(m)
-        has_oxides = any(v > 0 for v in vec)
+        vec = oxide_profile(m)
+        has_oxides = has_oxide_data(vec)
         mat_data.append((m.id, m.name, m.source, vec, has_oxides))
 
     # Count how many have at least one oxide
@@ -47,6 +31,9 @@ try:
     total_pairs = 0
     for i, (mid, mname, msrc, mvec, mhas) in enumerate(mat_data):
         if not mhas:
+            db.query(MaterialSubstitution).filter(
+                MaterialSubstitution.source_material_id == mid,
+            ).delete(synchronize_session=False)
             continue
 
         scores = []
@@ -56,13 +43,22 @@ try:
             if not ohas:
                 continue
 
-            score = cosine_similarity(mvec, ovec)
+            score = oxide_similarity(mvec, ovec)
             if score > 0:
                 scores.append((score, oid, oname, osrc))
 
         # Sort by score descending, take top N
         scores.sort(key=lambda x: -x[0])
-        top = scores[:TOP_N]
+        top = scores[:TOP_SIMILAR_MATERIALS]
+        top_target_ids = {target_id for _, target_id, _, _ in top}
+
+        # Remove relations that are no longer in this material's current top N.
+        existing_relations = db.query(MaterialSubstitution).filter(
+            MaterialSubstitution.source_material_id == mid,
+        ).all()
+        for relation in existing_relations:
+            if relation.target_material_id not in top_target_ids:
+                db.delete(relation)
 
         for score, oid, oname, osrc in top:
             # Upsert: if same pair exists, update score

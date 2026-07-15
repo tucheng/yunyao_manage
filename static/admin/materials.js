@@ -91,7 +91,7 @@ window.showSubstitutions = function(materialId) {
         if (diff != null && Math.abs(diff) > 0.5) { cell += ' <span style="color:' + (diff > 0 ? '#e74c3c' : '#27ae60') + ';font-weight:600">(' + (diff > 0 ? '+' : '') + diff + ')</span>'; }
         html += '<td style="text-align:center">' + cell + '</td>';
       });
-      html += '<td style="text-align:center">' + s.similarity_score + '%</td></tr>';
+      html += '<td style="text-align:center">' + Number(s.similarity_score || 0).toFixed(2) + '%</td></tr>';
     });
     html += '</tbody></table></div>';
     window.showModal(html);

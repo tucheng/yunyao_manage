@@ -7,6 +7,10 @@ from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 from database import get_db
 from models import Material, MaterialSubstitution, UserMaterial
+from services.material_similarity import (
+    TOP_SIMILAR_MATERIALS,
+    material_similarity,
+)
 
 router = APIRouter(prefix="/materials", tags=["材料库"])
 
@@ -494,35 +498,31 @@ def reorder_wishlist(data: dict, user_id: int = Query(...), db: Session = Depend
 
 @router.get("/{material_id}/substitutions")
 def get_substitutions(material_id: int, db: Session = Depends(get_db)) -> list:
-    """获取某材料的相似品（按相似度降序，只读展示）"""
-    from models import Material, MaterialSubstitution
-
+    """实时计算某材料的相似品，避免使用旧相似度缓存。"""
     material = db.query(Material).filter(Material.id == material_id).first()
     if not material:
         raise HTTPException(status_code=404, detail="材料不存在")
 
-    subs = (
-        db.query(MaterialSubstitution)
-        .filter(MaterialSubstitution.source_material_id == material_id)
-        .order_by(MaterialSubstitution.similarity_score.desc())
-        .all()
-    )
+    candidates = db.query(Material).filter(Material.id != material_id).all()
+    ranked = []
+    for target in candidates:
+        score = material_similarity(material, target)
+        if score > 0:
+            ranked.append((score, target))
+    ranked.sort(key=lambda item: (-item[0], item[1].name or "", item[1].id))
 
     result = []
-    for s in subs:
-        target = db.query(Material).filter(Material.id == s.target_material_id).first()
-        if not target:
-            continue
+    for score, target in ranked[:TOP_SIMILAR_MATERIALS]:
         result.append({
-            "id": s.id,
-            "source_material_id": s.source_material_id,
-            "target_material_id": s.target_material_id,
+            "id": target.id,
+            "source_material_id": material.id,
+            "target_material_id": target.id,
             "target_name": target.name,
             "target_name_en": target.name_en or "",
             "target_source": target.source or "",
             "target_formula": target.formula or "",
-            "similarity_score": s.similarity_score,
-            "note": s.note or "",
+            "similarity_score": score,
+            "note": "",
             # 目标材料氧化物成分
             "sio2": target.sio2, "al2o3": target.al2o3,
             "fe2o3": target.fe2o3, "tio2": target.tio2,
