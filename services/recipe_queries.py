@@ -91,7 +91,7 @@ def _recipe_ingredient_names(recipe_id: int, db: Session) -> list[str]:
     rows = db.query(RecipeIngredient.name).filter(
         RecipeIngredient.recipe_id == recipe_id
     ).all()
-    return [decrypt(r[0]) for r in rows if r[0]]
+    return [decrypt(r[0], allow_plaintext=True) for r in rows if r[0]]
 
 
 def _recipe_has_material(recipe: Recipe, material: str, db: Session) -> bool:
@@ -205,4 +205,3 @@ def _serialize_recipe_list_item(recipe, nickname, avatar, work_count=0, work_ima
     setattr(recipe, 'work_image', _first_work_image(work_image, work_images))
     setattr(recipe, 'favorite_count', favorite_count or 0)
     return recipe
-

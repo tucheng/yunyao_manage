@@ -50,7 +50,11 @@ def get_ingredients(recipe_id: int, request: Request, db: Session = Depends(get_
     # 构建返回对象，逐个解密 name 和 amount
     result = []
     for row in rows:
-        decrypted_name = decrypt(row.name)
+        # Most historical recipe rows predate field encryption. They are
+        # still valid application data and are migrated separately; accepting
+        # plaintext here keeps reads available without weakening malformed
+        # Fernet-token handling in security.decrypt.
+        decrypted_name = decrypt(row.name, allow_plaintext=True)
         # 查找材料库中的匹配ID
         mat = None
         if decrypted_name:
@@ -67,7 +71,7 @@ def get_ingredients(recipe_id: int, request: Request, db: Session = Depends(get_
             recipe_no=row.recipe_no,
             name=decrypted_name,
             name_en=row.name_en,
-            amount=decrypt(row.amount),
+            amount=decrypt(row.amount, allow_plaintext=True),
             unit=row.unit,
             note=row.note,
             is_additional=row.is_additional,
@@ -146,9 +150,9 @@ def save_ingredients(
             id=row.id,
             recipe_id=row.recipe_id,
             recipe_no=row.recipe_no,
-            name=decrypt(row.name),
+            name=decrypt(row.name, allow_plaintext=True),
             name_en=row.name_en,
-            amount=decrypt(row.amount),
+            amount=decrypt(row.amount, allow_plaintext=True),
             unit=row.unit,
             note=row.note,
             is_additional=row.is_additional,

@@ -443,11 +443,11 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
     # ----- 2. Decrypt & parse ----------------------------------------------
     ingredient_data = []
     for ing in ingredients:
-        decrypted_name = decrypt(ing.name) if ing.name else ""
+        decrypted_name = decrypt(ing.name, allow_plaintext=True) if ing.name else ""
         if not decrypted_name:
             continue
 
-        raw_amount = decrypt(ing.amount) if ing.amount else "0"
+        raw_amount = decrypt(ing.amount, allow_plaintext=True) if ing.amount else "0"
         # 金额可能含单位后缀如 "45.3%"，去掉非数字字符
         clean_amount = raw_amount.replace('%', '').replace('g', '').replace('G', '').strip()
         try:

@@ -28,9 +28,9 @@ def snapshot_recipe(recipe_id: int, db, note: str = "", user_id: int = 0):
     ingredients_data = []
     for ing in ingredients:
         ingredients_data.append({
-            "name": decrypt(ing.name),
+            "name": decrypt(ing.name, allow_plaintext=True),
             "name_en": ing.name_en,
-            "amount": decrypt(ing.amount) if ing.amount else "",
+            "amount": decrypt(ing.amount, allow_plaintext=True) if ing.amount else "",
             "unit": ing.unit,
             "note": ing.note,
             "is_additional": ing.is_additional,

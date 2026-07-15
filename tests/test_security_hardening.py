@@ -52,6 +52,14 @@ class EncryptionRotationTests(unittest.TestCase):
         with self.assertRaises(security.EncryptionError):
             security.decrypt("gAAAA-invalid-token")
 
+    def test_explicit_legacy_plaintext_compatibility(self):
+        self.assertEqual(
+            security.decrypt("卡斯特长石", allow_plaintext=True),
+            "卡斯特长石",
+        )
+        with self.assertRaises(security.EncryptionError):
+            security.decrypt("gAAAA-invalid-token", allow_plaintext=True)
+
 
 class ImageNormalizationTests(unittest.TestCase):
     def test_reencoding_discards_trailing_payload_and_metadata(self):
