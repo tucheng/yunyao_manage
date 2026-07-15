@@ -108,6 +108,40 @@ def reset_user_quota(db: Session, user: User) -> UserUsageQuota:
     return quota
 
 
+def sync_level_quotas(
+    db: Session,
+    level_id: int,
+    previous_limits: dict[str, int],
+    new_limits: dict[str, int],
+) -> int:
+    """等级额度修改后立即同步当日余额，同时保留用户今天已经消耗的次数。"""
+    today = business_today()
+    quotas = (
+        db.query(UserUsageQuota)
+        .join(User, User.id == UserUsageQuota.user_id)
+        .filter(User.level_id == level_id)
+        .all()
+    )
+    fields = {
+        "recipe_remaining": "max_recipes",
+        "work_remaining": "max_works",
+        "recipe_view_remaining": "max_views",
+    }
+    for quota in quotas:
+        if quota.quota_date != today:
+            quota.quota_date = today
+            for remaining_field, limit_field in fields.items():
+                setattr(quota, remaining_field, max(0, new_limits[limit_field]))
+            continue
+        for remaining_field, limit_field in fields.items():
+            old_limit = max(0, previous_limits[limit_field])
+            new_limit = max(0, new_limits[limit_field])
+            consumed = max(0, old_limit - max(0, getattr(quota, remaining_field) or 0))
+            setattr(quota, remaining_field, max(0, new_limit - consumed))
+    db.flush()
+    return len(quotas)
+
+
 def consume_quota(db: Session, user: User, kind: QuotaKind) -> int:
     if kind in ("recipe", "work") and user.is_muted:
         raise HTTPException(status_code=403, detail="你已被禁言，无法发布内容")
@@ -127,7 +161,10 @@ def consume_quota(db: Session, user: User, kind: QuotaKind) -> int:
 
 def consume_recipe_view_once(db: Session, user: User, recipe_id: int) -> tuple[bool, int]:
     today = business_today()
-    quota, _ = get_or_create_quota(db, user, for_update=True)
+    quota, level = get_or_create_quota(db, user, for_update=True)
+    # max_views=0 是硬性禁止查看，不能被“今天曾看过该配方”绕过。
+    if max(0, level.max_views or 0) == 0:
+        raise HTTPException(status_code=403, detail="当前等级无查看配方权限")
     viewed = db.query(UserDailyRecipeView).filter(
         UserDailyRecipeView.user_id == user.id,
         UserDailyRecipeView.recipe_id == recipe_id,

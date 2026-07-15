@@ -243,10 +243,22 @@ def get_view_status(
     if not user:
         return {"can_view": False, "reason": "用户不存在"}
 
+    from services.user_quota import get_or_create_quota
+    quota, level = get_or_create_quota(db, user)
+
     if recipe_id is not None:
         recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
         if recipe and recipe.user_id == user_id:
             return {"can_view": True, "is_owner": True, "quota_consumed": False, "reason": ""}
+
+        if max(0, level.max_views or 0) == 0:
+            db.commit()
+            return {
+                "can_view": False,
+                "remaining": 0,
+                "max_views": 0,
+                "reason": "当前等级无查看配方权限",
+            }
 
         # Reopening the same recipe on the same day never consumes another
         # quota, so it must remain accessible even when remaining reaches 0.
@@ -260,8 +272,6 @@ def get_view_status(
         if already_viewed:
             return {"can_view": True, "already_viewed": True, "quota_consumed": False, "reason": ""}
 
-    from services.user_quota import get_or_create_quota
-    quota, level = get_or_create_quota(db, user)
     db.commit()
     max_views = max(0, level.max_views or 0)
     remaining = quota.recipe_view_remaining

@@ -8,6 +8,7 @@ from sqlalchemy.pool import StaticPool
 from database import Base
 from models import Recipe, User, UserLevel, UserUsageQuota
 from services.recipe_access import require_recipe_reader
+from services.user_quota import business_today, sync_level_quotas
 
 
 class RecipeAccessPolicyTests(unittest.TestCase):
@@ -55,7 +56,40 @@ class RecipeAccessPolicyTests(unittest.TestCase):
         quota = self.db.query(UserUsageQuota).filter_by(user_id=self.owner.id).first()
         self.assertIsNone(quota)
 
+    def test_zero_view_level_blocks_even_a_recipe_viewed_earlier_today(self):
+        require_recipe_reader(self.db, self.public_recipe, self.viewer.id, consume_quota=True)
+        self.level.max_views = 0
+        sync_level_quotas(
+            self.db,
+            self.level.id,
+            {"max_recipes": 1, "max_works": 1, "max_views": 2},
+            {"max_recipes": 1, "max_works": 1, "max_views": 0},
+        )
+        self.db.commit()
+
+        with self.assertRaises(HTTPException) as caught:
+            require_recipe_reader(self.db, self.public_recipe, self.viewer.id, consume_quota=True)
+        self.assertEqual(403, caught.exception.status_code)
+
+    def test_level_limit_change_updates_existing_daily_balance(self):
+        self.db.add(UserUsageQuota(
+            user_id=self.viewer.id,
+            quota_date=business_today(),
+            recipe_remaining=1,
+            work_remaining=1,
+            recipe_view_remaining=1,
+        ))
+        self.db.flush()
+        synced = sync_level_quotas(
+            self.db,
+            self.level.id,
+            {"max_recipes": 1, "max_works": 1, "max_views": 2},
+            {"max_recipes": 1, "max_works": 1, "max_views": 4},
+        )
+        quota = self.db.query(UserUsageQuota).filter_by(user_id=self.viewer.id).one()
+        self.assertEqual(1, synced)
+        self.assertEqual(3, quota.recipe_view_remaining)
+
 
 if __name__ == "__main__":
     unittest.main()
-

@@ -297,13 +297,20 @@ def update_level(level_id: int, body: LevelBody, _admin=Depends(verify_admin), d
     l = db.query(UserLevel).filter(UserLevel.id == level_id).first()
     if not l:
         raise HTTPException(status_code=404, detail="等级不存在")
+    previous_limits = {
+        "max_recipes": l.max_recipes or 0,
+        "max_works": l.max_works or 0,
+        "max_views": l.max_views or 0,
+    }
     values = body.model_dump()
     if level_id in SYSTEM_LEVEL_NAMES:
         values["name"] = SYSTEM_LEVEL_NAMES[level_id]
     for k, v in values.items():
         setattr(l, k, v)
+    from services.user_quota import sync_level_quotas
+    synced_users = sync_level_quotas(db, level_id, previous_limits, values)
     db.commit()
-    return {"ok": True}
+    return {"ok": True, "synced_users": synced_users}
 
 
 @router.delete("/levels/{level_id}")
