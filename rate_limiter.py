@@ -47,7 +47,6 @@ POLICIES = {
     "ocr": Policy(12, 60),
     "upload": Policy(20, 60),
     "write": Policy(60, 60),
-    "admin": Policy(120, 60),
     "read": Policy(300, 60),
 }
 
@@ -86,8 +85,7 @@ class RateLimiter:
             return "ocr"
         if path.startswith("/upload/"):
             return "upload"
-        if path.startswith(("/admin", "/redeem/admin")):
-            return "admin"
+        # admin paths use same policies as regular users — no privileges
         return "read" if request.method in {"GET", "HEAD", "OPTIONS"} else "write"
 
     async def check(self, request: Request) -> Response | None:
