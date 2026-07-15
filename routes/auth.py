@@ -3,7 +3,6 @@ import base64
 import random
 import re
 import string
-import time
 import uuid
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -19,14 +18,14 @@ from models import User
 from routes.curves import create_default_user_curves
 from services.user_quota import get_or_create_quota
 from verification_sender import get_settings as get_verification_settings, send_verification_code
+from challenge_store import captcha_codes, verification_codes
+from observability import VERIFICATION_SENDS
 from datetime import datetime, timedelta
 
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 CODE_TTL_SECONDS = 600
 CAPTCHA_TTL = 300
-_verification_codes: dict[str, tuple[str, float]] = {}
-_captcha_codes: dict[str, tuple[str, float]] = {}
 
 
 class NicknameUpdate(BaseModel):
@@ -75,17 +74,8 @@ def _normalize_verification_target(email: str, phone: str, db: Session) -> tuple
 
 
 def _verify_code(target_key: str, code: str, consume: bool = True) -> None:
-    stored = _verification_codes.get(target_key)
-    if not stored:
-        raise HTTPException(status_code=400, detail="请先获取验证码")
-    expected, expires_at = stored
-    if expires_at < time.time():
-        _verification_codes.pop(target_key, None)
-        raise HTTPException(status_code=400, detail="验证码已过期")
-    if code.strip() != expected:
+    if not verification_codes.verify(target_key, code, consume=consume):
         raise HTTPException(status_code=400, detail="验证码错误")
-    if consume:
-        _verification_codes.pop(target_key, None)
 
 
 def _login_response(user: User, db: Session | None = None, password: str | None = None, upgrade_hash: bool = False):
@@ -106,11 +96,14 @@ def _initialize_new_user(db: Session, user: User) -> None:
 def send_code(body: SendCodeRequest, db: Session = Depends(get_db)):
     email, phone, target_key = _normalize_verification_target(body.email, body.phone, db)
     code = f"{random.randint(0, 999999):06d}"
+    channel = get_verification_settings(db).get("verification_channel", "unknown")
     try:
         delivery = send_verification_code(db, email=email, phone=phone, code=code)
+        verification_codes.set(target_key, code, CODE_TTL_SECONDS)
     except Exception as exc:
+        VERIFICATION_SENDS.labels(channel=channel, result="failure").inc()
         raise HTTPException(status_code=500, detail=f"验证码发送失败：{exc}")
-    _verification_codes[target_key] = (code, time.time() + CODE_TTL_SECONDS)
+    VERIFICATION_SENDS.labels(channel=delivery.get("channel", channel), result="success").inc()
     result = {
         "message": "验证码已发送",
         "target": email or phone,
@@ -147,7 +140,7 @@ def get_captcha():
     img.save(buf, format="PNG")
     b64 = base64.b64encode(buf.getvalue()).decode()
 
-    _captcha_codes[captcha_id] = (code, time.time() + CAPTCHA_TTL)
+    captcha_codes.set(captcha_id, code, CAPTCHA_TTL)
     return {"captcha_id": captcha_id, "captcha_image": f"data:image/png;base64,{b64}"}
 
 
@@ -196,15 +189,7 @@ class VerifyCodeRequest(BaseModel):
 @router.post("/verify-code")
 def verify_code(body: VerifyCodeRequest, db: Session = Depends(get_db)):
     email, phone, target_key = _normalize_verification_target(body.email, body.phone, db)
-    stored = _verification_codes.get(target_key)
-    if not stored:
-        raise HTTPException(status_code=400, detail="请先获取验证码")
-    expected, expires_at = stored
-    if expires_at < time.time():
-        _verification_codes.pop(target_key, None)
-        raise HTTPException(status_code=400, detail="验证码已过期")
-    if body.code.strip() != expected:
-        raise HTTPException(status_code=400, detail="验证码错误")
+    _verify_code(target_key, body.code, consume=False)
     # 不删除验证码，让 reset-password 接口消费
     return {"valid": True, "message": "验证码正确"}
 
@@ -238,16 +223,8 @@ def register(body: RegisterRequest, db: Session = Depends(get_db)):
         raise HTTPException(status_code=400, detail="用户名只能包含中英文、数字和下划线")
 
     # 图形验证码校验
-    captcha_stored = _captcha_codes.get(body.captcha_id)
-    if not captcha_stored:
-        raise HTTPException(status_code=400, detail="请先获取图形验证码")
-    expected_captcha, captcha_expires = captcha_stored
-    if captcha_expires < time.time():
-        _captcha_codes.pop(body.captcha_id, None)
-        raise HTTPException(status_code=400, detail="图形验证码已过期")
-    if body.captcha_code.strip().upper() != expected_captcha:
+    if not captcha_codes.verify(body.captcha_id, body.captcha_code.strip().upper()):
         raise HTTPException(status_code=400, detail="图形验证码错误")
-    _captcha_codes.pop(body.captcha_id, None)
 
     # ===== 第二步：唯一性校验 =====
     if email and User.by_email(db, email):

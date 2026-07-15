@@ -71,6 +71,9 @@ MAX_PAGE_SIZE = int(os.getenv("MAX_PAGE_SIZE", "50"))
 LOG_LEVEL = os.getenv("LOG_LEVEL", "INFO").strip().upper()
 LOG_TO_FILE = os.getenv("LOG_TO_FILE", "0" if IS_PRODUCTION else "1") == "1"
 LOG_DIR = os.getenv("LOG_DIR", os.path.join(os.path.dirname(__file__), "logs")).strip()
+SLOW_SQL_MS = int(os.getenv("SLOW_SQL_MS", "500"))
+SENTRY_DSN = os.getenv("SENTRY_DSN", "").strip()
+SENTRY_TRACES_SAMPLE_RATE = float(os.getenv("SENTRY_TRACES_SAMPLE_RATE", "0.05"))
 
 STORAGE_BACKEND = os.getenv("STORAGE_BACKEND", "local").strip().lower()
 LOCAL_UPLOAD_DIR = os.getenv(

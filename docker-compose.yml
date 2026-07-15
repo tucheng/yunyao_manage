@@ -4,6 +4,12 @@ services:
   redis:
     image: redis:7.4.3-alpine
     restart: unless-stopped
+    cpus: 0.50
+    mem_limit: 384m
+    pids_limit: 128
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
     command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis_data:/data
@@ -16,6 +22,14 @@ services:
   db:
     image: mysql:8.4.10
     restart: unless-stopped
+    cpus: 1.50
+    mem_limit: 1536m
+    pids_limit: 256
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=128m
+      - /var/run/mysqld:rw,nosuid,size=32m
     environment:
       MYSQL_DATABASE: yunyao
       MYSQL_USER: yunyao_app
@@ -34,6 +48,12 @@ services:
   minio:
     image: minio/minio:RELEASE.2025-09-07T16-13-09Z
     restart: unless-stopped
+    cpus: 1.00
+    mem_limit: 768m
+    pids_limit: 192
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     command: server /data --console-address :9001
     environment:
       MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID}
@@ -42,6 +62,14 @@ services:
       - minio_data:/data
   minio-init:
     image: minio/mc:RELEASE.2025-07-21T05-28-08Z
+    cpus: 0.25
+    mem_limit: 128m
+    pids_limit: 64
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=16m
+      - /root/.mc:rw,noexec,nosuid,size=16m
     depends_on:
       minio:
         condition: service_started
@@ -50,6 +78,7 @@ services:
       - >-
         until mc alias set local http://minio:9000 "$${S3_ACCESS_KEY_ID}" "$${S3_SECRET_ACCESS_KEY}"; do sleep 2; done &&
         mc mb --ignore-existing "local/$${S3_BUCKET}" &&
+        mc version enable "local/$${S3_BUCKET}" &&
         mc anonymous set download "local/$${S3_BUCKET}"
     environment:
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID}
@@ -58,10 +87,17 @@ services:
     restart: "no"
 
   api:
+    image: ${API_IMAGE:-yunyao-api:local}
     build:
       context: .
       dockerfile: Dockerfile
     restart: unless-stopped
+    cpus: 1.00
+    mem_limit: 768m
+    pids_limit: 256
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=128m"]
     env_file:
       - .env.prod
     environment:
@@ -91,6 +127,12 @@ services:
       context: .
       dockerfile: Dockerfile
     entrypoint: ["/bin/sh", "-c"]
+    cpus: 1.00
+    mem_limit: 768m
+    pids_limit: 128
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=128m"]
     command: ["alembic upgrade head && python -B init_db.py"]
     env_file:
       - .env.prod
@@ -107,6 +149,12 @@ services:
       context: .
       dockerfile: Dockerfile
     entrypoint: ["python", "-B", "scripts/run_daily_maintenance.py"]
+    cpus: 0.50
+    mem_limit: 384m
+    pids_limit: 128
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
     env_file:
       - .env.prod
     environment:
@@ -118,15 +166,86 @@ services:
     profiles: ["jobs"]
     restart: "no"
 
+  mysql-backup:
+    image: mysql:8.4.10
+    profiles: ["backups"]
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/opt/backup/mysql-backup.sh"]
+    environment:
+      MYSQL_HOST: db
+      MYSQL_DATABASE: yunyao
+      MYSQL_USER: root
+      MYSQL_PASSWORD: ${MYSQL_ROOT_PASSWORD:?set MYSQL_ROOT_PASSWORD}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./deploy/backup:/opt/backup:ro
+      - backup_data:/backups
+    depends_on:
+      db:
+        condition: service_healthy
+    cpus: 0.50
+    mem_limit: 384m
+    pids_limit: 96
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
+
+  object-backup:
+    image: minio/mc:RELEASE.2025-07-21T05-28-08Z
+    profiles: ["backups"]
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/opt/backup/object-backup.sh"]
+    environment:
+      S3_ENDPOINT_URL: http://minio:9000
+      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID}
+      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY}
+      S3_BUCKET: ${S3_BUCKET:-yunyao-uploads}
+      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
+      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
+    volumes:
+      - ./deploy/backup:/opt/backup:ro
+      - backup_data:/backups
+    depends_on:
+      minio-init:
+        condition: service_completed_successfully
+    cpus: 0.50
+    mem_limit: 384m
+    pids_limit: 96
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /tmp:rw,noexec,nosuid,size=64m
+      - /root/.mc:rw,noexec,nosuid,size=16m
+
   frontend:
+    image: ${FRONTEND_IMAGE:-yunyao-frontend:local}
     build:
       context: ../yunyao_app
       dockerfile: Dockerfile
     restart: unless-stopped
+    cpus: 0.50
+    mem_limit: 256m
+    pids_limit: 128
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,size=32m
+      - /var/run:rw,noexec,nosuid,size=8m
+      - /tmp:rw,noexec,nosuid,size=16m
 
   proxy:
     image: nginx:1.28.0-alpine
     restart: unless-stopped
+    cpus: 0.50
+    mem_limit: 256m
+    pids_limit: 128
+    read_only: true
+    security_opt: ["no-new-privileges:true"]
+    tmpfs:
+      - /var/cache/nginx:rw,noexec,nosuid,size=32m
+      - /var/run:rw,noexec,nosuid,size=8m
+      - /tmp:rw,noexec,nosuid,size=16m
     ports:
       - "${HTTP_PORT:-8080}:80"
     volumes:
@@ -141,3 +260,4 @@ volumes:
   mysql_data:
   minio_data:
   redis_data:
+  backup_data:

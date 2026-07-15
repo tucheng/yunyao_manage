@@ -1,0 +1,17 @@
+{
+  "version": 1,
+  "disable_existing_loggers": false,
+  "formatters": {
+    "json": {"()": "observability.JsonFormatter"}
+  },
+  "handlers": {
+    "stderr": {"class": "logging.StreamHandler", "formatter": "json", "stream": "ext://sys.stderr"},
+    "stdout": {"class": "logging.StreamHandler", "formatter": "json", "stream": "ext://sys.stdout"}
+  },
+  "loggers": {
+    "uvicorn": {"handlers": ["stderr"], "level": "INFO", "propagate": false},
+    "uvicorn.error": {"level": "INFO"},
+    "uvicorn.access": {"handlers": ["stdout"], "level": "WARNING", "propagate": false}
+  },
+  "root": {"handlers": ["stderr"], "level": "INFO"}
+}
