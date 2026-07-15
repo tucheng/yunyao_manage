@@ -22,6 +22,13 @@ logger = logging.getLogger('yunyao')
 
 router = APIRouter()
 
+
+def _user_names(user: User | None) -> dict[str, str]:
+    return {
+        "username": (user.username or "") if user else "",
+        "nickname": (user.nickname or "") if user else "",
+    }
+
 def _require_reviewable_recipe(db: Session, recipe_id: int, request: Request) -> Recipe:
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
@@ -76,7 +83,7 @@ def create_review(body: ReviewCreate, request: Request, user_id: int = Query(...
         "kiln_type_other": review.kiln_type_other or "",
         "temperature": review.temperature or "",
         "created_at": review.created_at,
-        "nickname": user.nickname if user else f"用户{review.user_id}",
+        **_user_names(user),
         "replies": [],
     }
 
@@ -109,7 +116,7 @@ def list_reviews(recipe_id: int, request: Request, db: Session = Depends(get_db)
             "kiln_type_other": reply.kiln_type_other or "",
             "temperature": reply.temperature or "",
             "created_at": reply.created_at,
-            "nickname": reply_user.nickname if reply_user else f"用户{reply.user_id}",
+            **_user_names(reply_user),
             "replies": [],
         })
 
@@ -138,7 +145,7 @@ def list_reviews(recipe_id: int, request: Request, db: Session = Depends(get_db)
             "kiln_type_other": r.kiln_type_other or "",
             "temperature": r.temperature or "",
             "created_at": r.created_at,
-            "nickname": user.nickname if user else f"用户{r.user_id}",
+            **_user_names(user),
             "recipe_title": recipe.title if recipe else "",
             "replies": reply_map.get(r.id, []),
         })

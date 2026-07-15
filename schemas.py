@@ -137,6 +137,7 @@ class ReviewOut(BaseModel):
     recipe_title: str = ""
     created_at: datetime
     username: str = ""
+    nickname: str = ""
     replies: list["ReviewOut"] = []
 
     model_config = {"from_attributes": True}
@@ -155,6 +156,7 @@ class WorkCommentOut(BaseModel):
     user_id: int
     content: str
     created_at: datetime
+    username: str = ""
     nickname: str = ""
     avatar: str = ""
     replies: list["WorkCommentOut"] = []

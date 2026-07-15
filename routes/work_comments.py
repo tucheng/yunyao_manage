@@ -20,9 +20,12 @@ def _ensure_comment_columns(db: Session):
             db.commit()
 
 
-def _username(user_id: int, users: dict[int, User]) -> str:
+def _user_names(user_id: int, users: dict[int, User]) -> dict[str, str]:
     user = users.get(user_id)
-    return user.nickname if user else f"用户{user_id}"
+    return {
+        "username": (user.username or "") if user else "",
+        "nickname": (user.nickname or "") if user else "",
+    }
 
 
 @router.get("/{work_id}/comments", response_model=list[WorkCommentOut])
@@ -55,7 +58,7 @@ def list_work_comments(work_id: int, db: Session = Depends(get_db)):
                 "user_id": reply.user_id,
                 "content": reply.content,
                 "created_at": reply.created_at,
-                "nickname": _username(reply.user_id, users),
+                **_user_names(reply.user_id, users),
                 "replies": [],
             })
         result.append({
@@ -65,7 +68,7 @@ def list_work_comments(work_id: int, db: Session = Depends(get_db)):
             "user_id": comment.user_id,
             "content": comment.content,
             "created_at": comment.created_at,
-            "nickname": _username(comment.user_id, users),
+            **_user_names(comment.user_id, users),
             "replies": replies,
         })
     return result
@@ -103,7 +106,7 @@ def create_work_comment(work_id: int, body: WorkCommentCreate, db: Session = Dep
     # 给作品主人发通知
     work = db.query(Work).filter(Work.id == work_id).first()
     if work and work.user_id != body.user_id:
-        username = user.nickname if user else f"用户{body.user_id}"
+        username = (user.nickname or user.username) if user else f"用户{body.user_id}"
         add_notification(
             db=db,
             user_id=work.user_id,
@@ -120,6 +123,7 @@ def create_work_comment(work_id: int, body: WorkCommentCreate, db: Session = Dep
         "user_id": comment.user_id,
         "content": comment.content,
         "created_at": comment.created_at,
-        "nickname": user.nickname if user else f"用户{body.user_id}",
+        "username": (user.username or "") if user else "",
+        "nickname": (user.nickname or "") if user else "",
         "replies": [],
     }
