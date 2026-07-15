@@ -85,6 +85,41 @@ def _clean_existing_data(conn) -> None:
     conn.execute(sa.text("DELETE FROM app_settings WHERE `key` = 'smtp_password'"))
 
 
+def _clean_orphan_foreign_keys(conn) -> None:
+    """Remove legacy child rows whose referenced parent no longer exists.
+
+    Earlier schemas did not consistently enforce foreign keys, so adding the
+    production constraints can otherwise fail on already-orphaned rows.
+    """
+    if conn.dialect.name == "sqlite":
+        return
+    quote = conn.dialect.identifier_preparer.quote
+    inspector = inspect(conn)
+    existing_tables = set(inspector.get_table_names())
+    for table_name, table in Base.metadata.tables.items():
+        if table_name not in existing_tables:
+            continue
+        for constraint in table.foreign_key_constraints:
+            elements = list(constraint.elements)
+            if len(elements) != 1:
+                continue
+            element = elements[0]
+            child_column = element.parent.name
+            parent_table = element.column.table.name
+            parent_column = element.column.name
+            if parent_table not in existing_tables:
+                continue
+            conn.execute(
+                sa.text(
+                    f"DELETE child FROM {quote(table_name)} AS child "
+                    f"LEFT JOIN {quote(parent_table)} AS parent "
+                    f"ON child.{quote(child_column)} = parent.{quote(parent_column)} "
+                    f"WHERE child.{quote(child_column)} IS NOT NULL "
+                    f"AND parent.{quote(parent_column)} IS NULL"
+                )
+            )
+
+
 def _sync_foreign_keys(conn) -> None:
     if conn.dialect.name == "sqlite":
         return
@@ -120,6 +155,7 @@ def _sync_foreign_keys(conn) -> None:
 def upgrade() -> None:
     conn = op.get_bind()
     _clean_existing_data(conn)
+    _clean_orphan_foreign_keys(conn)
     _sync_foreign_keys(conn)
     inspector = inspect(conn)
     for table, constraints in UNIQUE_CONSTRAINTS.items():
