@@ -375,6 +375,36 @@ def add_material(data: dict, user_id: int = Query(...), db: Session = Depends(ge
     return {"message": "添加成功", "id": item.id}
 
 
+@router.post("/batch", dependencies=[Depends(current_user)])
+def batch_add_materials(data: dict, user_id: int = Query(...), db: Session = Depends(get_db)):
+    names = data.get("names", [])
+    if not isinstance(names, list) or not names:
+        raise HTTPException(status_code=400, detail="请提供材料名称")
+    added = 0
+    for raw_name in names[:100]:
+        name = str(raw_name or "").strip()
+        if not name:
+            continue
+        _, changed = _put_material_in_status(db, user_id, name, "owned", {})
+        if changed:
+            added += 1
+    db.commit()
+    return {"message": f"已添加 {added} 种材料", "added": added}
+
+
+@router.post("/reorder", dependencies=[Depends(current_user)])
+def reorder_materials(data: dict, user_id: int = Query(...), db: Session = Depends(get_db)):
+    ids = data.get("ids", [])
+    for index, item_id in enumerate(ids):
+        db.query(UserMaterial).filter(
+            UserMaterial.id == item_id,
+            UserMaterial.user_id == user_id,
+            UserMaterial.status == "owned",
+        ).update({"sort_order": index})
+    db.commit()
+    return {"message": "排序已更新"}
+
+
 @router.put("/{item_id}", dependencies=[Depends(current_user)])
 def update_material(item_id: int, data: dict, user_id: int = Query(...), db: Session = Depends(get_db)):
     item = db.query(UserMaterial).filter(
@@ -434,6 +464,34 @@ def add_to_wishlist(data: dict, user_id: int = Query(...), db: Session = Depends
         raise HTTPException(status_code=400, detail="已在待购清单中")
     db.commit()
     return {"message": "已加入待购清单", "id": _.id}
+
+
+@router.get("/wishlist", dependencies=[Depends(current_user)])
+def list_wishlist(user_id: int = Query(...), db: Session = Depends(get_db)):
+    items = db.query(UserMaterial).filter(
+        UserMaterial.user_id == user_id,
+        UserMaterial.status == "wishlist",
+    ).order_by(UserMaterial.sort_order, UserMaterial.id).all()
+    return {"total": len(items), "data": [
+        {"id": item.id, "name": item.name, "status": item.status,
+         "category": item.category or "", "sort_order": item.sort_order,
+         "from_recipe_id": item.from_recipe_id}
+        for item in items
+    ]}
+
+
+@router.delete("/wishlist/{item_id}", dependencies=[Depends(current_user)])
+def delete_wishlist_item(item_id: int, user_id: int = Query(...), db: Session = Depends(get_db)):
+    item = db.query(UserMaterial).filter(
+        UserMaterial.id == item_id,
+        UserMaterial.user_id == user_id,
+        UserMaterial.status == "wishlist",
+    ).first()
+    if not item:
+        raise HTTPException(status_code=404, detail="待购材料不存在")
+    db.delete(item)
+    db.commit()
+    return {"message": "已删除"}
 
 
 @router.post("/wishlist/batch", dependencies=[Depends(current_user)])

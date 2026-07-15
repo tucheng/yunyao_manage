@@ -24,6 +24,7 @@ class User(Base):
     level_id = Column(Integer, ForeignKey("user_levels.id", ondelete="RESTRICT"), default=5)
     is_muted = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False)
+    token_version = Column(Integer, nullable=False, default=0, server_default=text("0"))
     expires_at = Column(DateTime(timezone=True), nullable=False, server_default=text("'2027-07-09 00:00:00'"), comment="使用期限")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 

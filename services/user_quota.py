@@ -109,6 +109,8 @@ def reset_user_quota(db: Session, user: User) -> UserUsageQuota:
 
 
 def consume_quota(db: Session, user: User, kind: QuotaKind) -> int:
+    if kind in ("recipe", "work") and user.is_muted:
+        raise HTTPException(status_code=403, detail="你已被禁言，无法发布内容")
     quota, _ = get_or_create_quota(db, user, for_update=True)
     field = _REMAINING_FIELD[kind]
     remaining = getattr(quota, field) or 0

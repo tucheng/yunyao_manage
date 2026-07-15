@@ -9,7 +9,14 @@ window.complaintDate = function(value) {
 
 window.complaintImages = function(value) {
   if (!value) return [];
-  return (Array.isArray(value) ? value : String(value).split(',')).map(function(item) { return String(item).trim(); }).filter(Boolean);
+  return (Array.isArray(value) ? value : String(value).split(',')).map(function(item) {
+    try {
+      var url = new URL(String(item).trim(), window.location.origin);
+      return url.protocol === 'http:' || url.protocol === 'https:' ? url.href : '';
+    } catch (_) {
+      return '';
+    }
+  }).filter(Boolean);
 };
 
 window.complaintFilterUrl = function(page) {
@@ -59,7 +66,7 @@ window.renderComplaintDetail = function(item) {
   var images = window.complaintImages(item.images);
   var replies = item.replies || [];
   var imageHtml = images.length ? '<div class="complaint-images">' + images.map(function(src) {
-    return '<img src="' + escAttr(src) + '" onclick="window.open(\'' + escAttr(src) + '\',\'_blank\')" alt="投诉图片">';
+    return '<a href="' + escAttr(src) + '" target="_blank" rel="noopener noreferrer"><img src="' + escAttr(src) + '" alt="投诉图片"></a>';
   }).join('') + '</div>' : '';
   var replyHtml = replies.length ? replies.map(function(reply) {
     return '<div class="reply-card"><small>' + esc(reply.sender_name || '管理员') + ' · ' + window.complaintDate(reply.created_at) + '</small><div style="white-space:pre-wrap;line-height:1.6">' + esc(reply.content || '') + '</div></div>';

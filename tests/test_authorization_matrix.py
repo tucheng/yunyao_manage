@@ -80,6 +80,14 @@ class AuthorizationMatrixTests(unittest.TestCase):
         self.assertEqual(caught.exception.status_code, 403)
         self.assertEqual(asyncio.run(current_admin(self.admin)).id, self.admin.id)
 
+    def test_token_version_revokes_existing_token(self):
+        token = create_access_token(self.owner)
+        self.owner.token_version = (self.owner.token_version or 0) + 1
+        self.db.commit()
+        with self.assertRaises(HTTPException) as caught:
+            asyncio.run(current_user(make_request(token), self.db))
+        self.assertEqual(caught.exception.status_code, 401)
+
 
 if __name__ == "__main__":
     unittest.main()

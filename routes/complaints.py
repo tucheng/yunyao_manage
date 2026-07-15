@@ -1,15 +1,33 @@
 from datetime import datetime
+from urllib.parse import urlsplit
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app_config import ADMIN_USER_IDS
+from app_config import ADMIN_USER_IDS, S3_PUBLIC_BASE_URL
 from auth_utils import current_user, get_current_user
 from database import get_db
 from models import Complaint, ComplaintReply as ComplaintReplyRecord, User
+from image_utils import parse_image_list
 
 router = APIRouter(prefix="/complaints", tags=["投诉建议"], dependencies=[Depends(current_user)])
+
+
+def _sanitize_complaint_images(value: str) -> str:
+    images = parse_image_list(value)
+    if len(images) > 5:
+        raise HTTPException(status_code=400, detail="最多上传5张图片")
+    allowed = []
+    s3_base = S3_PUBLIC_BASE_URL.rstrip("/")
+    for image in images:
+        parsed = urlsplit(image)
+        is_local = not parsed.scheme and image.startswith(("/uploads/", "/media/"))
+        is_s3 = bool(s3_base and image.startswith(s3_base + "/"))
+        if not is_local and not is_s3:
+            raise HTTPException(status_code=400, detail="投诉图片必须来自本站上传服务")
+        allowed.append(image)
+    return ",".join(allowed)
 
 
 class ComplaintCreate(BaseModel):
@@ -119,7 +137,7 @@ def create_complaint(body: ComplaintCreate, request: Request, db: Session = Depe
     item = Complaint(
         user_id=current_user.id,
         content=content[:500],
-        images=body.images or "",
+        images=_sanitize_complaint_images(body.images),
         status="open",
         is_resolved=False,
         is_closed=False,

@@ -65,7 +65,7 @@ class RateLimiter:
             self._redis = from_url(REDIS_URL, encoding="utf-8", decode_responses=True)
         return self._redis
 
-    def _client_ip(self, request: Request) -> str:
+    def client_ip(self, request: Request) -> str:
         peer = request.client.host if request.client else "unknown"
         try:
             trusted = any(ip_address(peer) in network for network in self._trusted_networks)
@@ -101,7 +101,7 @@ class RateLimiter:
         group = self._group(request)
         policy = POLICIES[group]
         now_ms = int(time.time() * 1000)
-        identity = hashlib.sha256(self._client_ip(request).encode()).hexdigest()[:32]
+        identity = hashlib.sha256(self.client_ip(request).encode()).hexdigest()[:32]
         key = f"yunyao:rate:{group}:{identity}"
         member = f"{now_ms}:{secrets.token_hex(8)}"
         try:

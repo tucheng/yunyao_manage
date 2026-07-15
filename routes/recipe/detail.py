@@ -9,6 +9,7 @@ from schemas import (
 from security import encrypt, decrypt, hash_for_lookup
 from image_utils import normalize_image_url, parse_image_list, serialize_image_list
 from auth_utils import user_id_from_request
+from services.recipe_access import require_recipe_reader
 from sqlalchemy import func
 from seger_calculator import calculate_seger
 from services.recipe_version import snapshot_recipe
@@ -24,10 +25,12 @@ router = APIRouter()
 from services.recipe_queries import *
 
 @router.get("/by-no/{recipe_no}")
-def get_recipe_by_no(recipe_no: str, db: Session = Depends(get_db)):
+def get_recipe_by_no(recipe_no: str, request: Request, db: Session = Depends(get_db)):
     recipe = db.query(Recipe).filter(Recipe.recipe_no == recipe_no).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="查不出此编号对应的配方")
+    require_recipe_reader(db, recipe, user_id_from_request(request), consume_quota=True)
+    db.commit()
     return recipe
 
 # ========= 详情 =========
@@ -43,21 +46,8 @@ def get_recipe(
     if not recipe:
         raise HTTPException(status_code=404, detail="不存在")
     current_user_id = user_id_from_request(request)
-    if not current_user_id:
-        raise HTTPException(status_code=401, detail="请先登录")
-
-    # 私密配方：只有作者可看
-    if recipe.visibility not in ("public", "showoff") and recipe.user_id != current_user_id:
-        raise HTTPException(status_code=404, detail="不存在")
-
-    from services.user_quota import consume_recipe_view_once
-    user = db.query(User).filter(User.id == current_user_id).first()
-    if not user:
-        raise HTTPException(status_code=404, detail="用户不存在")
-    # 作者查看自己的配方不受每日额度限制，也不扣减查看额度。
-    if recipe.user_id != current_user_id:
-        consume_recipe_view_once(db, user, recipe_id)
-        db.commit()
+    require_recipe_reader(db, recipe, current_user_id, consume_quota=True)
+    db.commit()
 
     # 收藏状态
     recipe.is_favorited = False
@@ -153,11 +143,13 @@ def _parse_seger_detail(detail_json: str) -> dict:
 
 
 @router.get("/{recipe_id}/seger")
-def get_recipe_seger(recipe_id: int, db: Session = Depends(get_db)):
+def get_recipe_seger(recipe_id: int, request: Request, db: Session = Depends(get_db)):
     """获取配方的 Seger 公式计算结果"""
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="配方不存在")
+    require_recipe_reader(db, recipe, user_id_from_request(request), consume_quota=True)
+    db.commit()
 
     seger = db.query(RecipeSeger).filter(RecipeSeger.recipe_id == recipe_id).first()
     if not seger:
@@ -187,5 +179,4 @@ def get_recipe_seger(recipe_id: int, db: Session = Depends(get_db)):
         "calculated_at": seger.calculated_at.isoformat() if seger.calculated_at else None,
         **detail_info,
     }
-
 

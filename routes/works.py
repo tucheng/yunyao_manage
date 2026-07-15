@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session, joinedload
 from database import get_db
 from models import AppSetting, Work, Recipe, User, Favorite, WorkComment, FiringCurve, Like
@@ -7,9 +7,39 @@ from datetime import datetime
 import json
 from color_names import color_name_in_range, get_color_range_config, get_glaze_colors_data
 from image_utils import normalize_image_url, parse_image_list, serialize_image_list
-from auth_utils import current_user
+from auth_utils import current_user, user_id_from_request
+from services.recipe_access import require_recipe_reader
 
 router = APIRouter(prefix="/works", tags=["作品"])
+
+
+def _recipe_for_work_link(db: Session, recipe_id, user_id: int) -> Recipe | None:
+    if recipe_id in (None, "", 0, "0"):
+        return None
+    try:
+        normalized_id = int(recipe_id)
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="配方编号无效")
+    recipe = db.query(Recipe).filter(Recipe.id == normalized_id).with_for_update().first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="配方不存在")
+    # 作品可以关联别人的配方，但关联者必须具备该配方的查看权限。
+    require_recipe_reader(db, recipe, user_id, consume_quota=True)
+    return recipe
+
+
+def _set_work_recipe(db: Session, work: Work, recipe_id, user_id: int) -> None:
+    new_recipe = _recipe_for_work_link(db, recipe_id, user_id)
+    new_recipe_id = new_recipe.id if new_recipe else None
+    if work.recipe_id == new_recipe_id:
+        return
+    if work.recipe_id:
+        old_recipe = db.query(Recipe).filter(Recipe.id == work.recipe_id).with_for_update().first()
+        if old_recipe:
+            old_recipe.work_count = max(0, (old_recipe.work_count or 0) - 1)
+    work.recipe_id = new_recipe_id
+    if new_recipe:
+        new_recipe.work_count = (new_recipe.work_count or 0) + 1
 
 
 TEMPERATURE_RANGE_CONFIG = [
@@ -520,7 +550,6 @@ def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
     image, images_raw = _sanitize_work_images(data.get("image"), data.get("images"))
     if not image:
         raise HTTPException(status_code=400, detail="作品图片不能为空或为无效临时地址")
-    recipe_id = data.get("recipe_id") or None
     description = data.get("description", "")
     category = data.get("category", "")
     atmosphere = data.get("atmosphere", "")
@@ -580,14 +609,8 @@ def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
     work.transparency = transparency
     work.curve_id = curve_id
     work.glaze_colors = glaze_colors_json
-    if recipe_id is not None:
-        old_recipe_id = work.recipe_id
-        work.recipe_id = recipe_id
-        if old_recipe_id != recipe_id:
-            if old_recipe_id:
-                db.query(Recipe).filter(Recipe.id == old_recipe_id).update({"work_count": Recipe.work_count - 1})
-            if recipe_id:
-                db.query(Recipe).filter(Recipe.id == recipe_id).update({"work_count": Recipe.work_count + 1})
+    if "recipe_id" in data:
+        _set_work_recipe(db, work, data.get("recipe_id"), user_id)
 
     db.commit()
     db.refresh(work)
@@ -602,7 +625,6 @@ def create_work(
     """发布作品"""
     image, images_raw = _sanitize_work_images(data.get("image"), data.get("images"))
     user_id = data.get("user_id", 0)
-    recipe_id = data.get("recipe_id") or None
     description = data.get("description", "")
     category = data.get("category", "")
     atmosphere = data.get("atmosphere", "")
@@ -624,6 +646,7 @@ def create_work(
         raise HTTPException(status_code=404, detail="用户不存在")
     from services.user_quota import consume_quota
     consume_quota(db, user, "work")
+    linked_recipe = _recipe_for_work_link(db, data.get("recipe_id"), user_id)
 
     # 处理釉色数据
     glaze_colors_raw = data.get("glaze_colors") or None
@@ -665,7 +688,7 @@ def create_work(
 
     work = Work(
         user_id=user_id,
-        recipe_id=recipe_id,
+        recipe_id=linked_recipe.id if linked_recipe else None,
         image=image,
         images=serialize_image_list(images_raw),
         description=description,
@@ -680,12 +703,10 @@ def create_work(
         glaze_colors=glaze_colors_json,
     )
     db.add(work)
+    if linked_recipe:
+        linked_recipe.work_count = (linked_recipe.work_count or 0) + 1
     db.commit()
     db.refresh(work)
-    # 关联配方时增加作品计数
-    if recipe_id:
-        db.query(Recipe).filter(Recipe.id == recipe_id).update({"work_count": Recipe.work_count + 1})
-        db.commit()
     return {"id": work.id, "message": "发布成功"}
 
 
@@ -741,19 +762,13 @@ def link_work_recipe(work_id: int, data: dict, db: Session = Depends(get_db)):
         raise HTTPException(status_code=404, detail="作品不存在")
     if work.user_id != user_id:
         raise HTTPException(status_code=403, detail="无权修改该作品")
-    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="配方不存在")
-    if recipe.user_id != user_id:
-        raise HTTPException(status_code=403, detail="无权关联该配方")
-    work.recipe_id = recipe_id
-    db.query(Recipe).filter(Recipe.id == recipe_id).update({"work_count": Recipe.work_count + 1})
+    _set_work_recipe(db, work, recipe_id, user_id)
     db.commit()
     return {"message": "已关联配方", "work_id": work.id, "recipe_id": recipe_id}
 
 
 @router.get("/{work_id}")
-def get_work(work_id: int, current_user_id: int = 0, db: Session = Depends(get_db)):
+def get_work(work_id: int, request: Request, current_user_id: int = 0, db: Session = Depends(get_db)):
     """获取单个作品详情（含用户、配方信息）"""
     row = (
         db.query(Work, User, Recipe, FiringCurve)
@@ -767,6 +782,10 @@ def get_work(work_id: int, current_user_id: int = 0, db: Session = Depends(get_d
         raise HTTPException(status_code=404, detail="作品不存在")
 
     work, user, recipe, curve = row
+    current_user_id = user_id_from_request(request) or 0
+    can_expose_recipe = bool(
+        recipe and (recipe.visibility in ("public", "showoff") or recipe.user_id == current_user_id)
+    )
     image, imgs = _sanitize_work_images(work.image, work.images)
     favorite_count = db.query(Favorite).filter(Favorite.work_id == work.id).count()
     is_favorited = False
@@ -786,9 +805,9 @@ def get_work(work_id: int, current_user_id: int = 0, db: Session = Depends(get_d
         "user_id": work.user_id,
         "nickname": user.nickname if user else f"用户{work.user_id}",
         "avatar": user.avatar if user else "",
-        "recipe_id": work.recipe_id,
-        "recipe_title": recipe.title if recipe else "",
-        "recipe_cover": normalize_image_url(recipe.cover) if recipe else "",
+        "recipe_id": work.recipe_id if can_expose_recipe else None,
+        "recipe_title": recipe.title if can_expose_recipe else "",
+        "recipe_cover": normalize_image_url(recipe.cover) if can_expose_recipe else "",
         "image": image,
         "images": imgs,
         "description": work.description or "",

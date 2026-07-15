@@ -112,6 +112,11 @@ async def security_headers(request: Request, call_next):
     response.headers["Permissions-Policy"] = "camera=(), microphone=(), geolocation=()"
     if request.url.path.startswith(("/admin", "/static/admin/")):
         response.headers["Cache-Control"] = "no-store"
+        response.headers["Content-Security-Policy"] = (
+            "default-src 'self'; img-src 'self' data: http: https:; "
+            "script-src 'self' 'unsafe-inline'; style-src 'self' 'unsafe-inline'; "
+            "object-src 'none'; base-uri 'none'; frame-ancestors 'none'"
+        )
     if IS_PRODUCTION:
         response.headers["Strict-Transport-Security"] = "max-age=31536000; includeSubDomains"
     return response
@@ -170,7 +175,7 @@ async def close_shared_clients():
 @app.middleware("http")
 async def admin_ip_whitelist(request: Request, call_next):
     if ADMIN_ALLOWED_IPS and request.url.path.startswith(("/admin", "/admin-panel")):
-        client_ip = request.client.host if request.client else ""
+        client_ip = _rate_limiter.client_ip(request)
         if client_ip not in ADMIN_ALLOWED_IPS:
             return Response(
                 json.dumps({"detail": "无权访问"}, ensure_ascii=False),

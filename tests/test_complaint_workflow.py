@@ -5,14 +5,24 @@ from sqlalchemy.orm import sessionmaker
 
 from database import Base
 from models import Complaint, ComplaintReply, User
-from routes.complaints import serialize_complaint
+from fastapi import HTTPException
+
+from routes.complaints import _sanitize_complaint_images, serialize_complaint
 
 
 class ComplaintWorkflowTests(unittest.TestCase):
+    def test_only_uploaded_complaint_images_are_accepted(self):
+        self.assertEqual(
+            _sanitize_complaint_images("/uploads/misc/a.png,/uploads/misc/b.jpg"),
+            "/uploads/misc/a.png,/uploads/misc/b.jpg",
+        )
+        with self.assertRaises(HTTPException):
+            _sanitize_complaint_images("javascript:alert(1)\" onerror=\"alert(1)")
+
     def setUp(self):
-        engine = create_engine("sqlite:///:memory:")
-        Base.metadata.create_all(engine)
-        self.db = sessionmaker(bind=engine)()
+        self.engine = create_engine("sqlite:///:memory:")
+        Base.metadata.create_all(self.engine)
+        self.db = sessionmaker(bind=self.engine)()
         self.owner = User(username="owner", nickname="提问人", password="", is_admin=False)
         self.admin = User(username="admin", nickname="客服", password="", is_admin=True)
         self.db.add_all([self.owner, self.admin])
@@ -20,6 +30,7 @@ class ComplaintWorkflowTests(unittest.TestCase):
 
     def tearDown(self):
         self.db.close()
+        self.engine.dispose()
 
     def test_serializes_multiple_replies_and_workflow_statuses(self):
         complaint = Complaint(

@@ -11,7 +11,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from auth_utils import auth_payload, current_user, hash_password, verify_password, token_from_request, decode_access_token, user_role
+from auth_utils import auth_payload, current_user, hash_password, verify_password, user_role
 from database import get_db
 from encryption_utils import encrypt, hash_for_lookup
 from models import User
@@ -147,13 +147,9 @@ def get_captcha():
 @router.get("/verify")
 def verify_token(request: Request, db: Session = Depends(get_db)):
     """校验当前 token 是否有效"""
-    token = token_from_request(request)
-    if not token:
-        raise HTTPException(status_code=401, detail="Missing token")
-    payload = decode_access_token(token)
-    user = db.query(User).filter(User.id == int(payload["sub"])).first()
-    if not user:
-        raise HTTPException(status_code=401, detail="User not found")
+    from auth_utils import get_current_user
+
+    user = get_current_user(request, db)
     return {
         "valid": True,
         "user_id": user.id,
@@ -337,5 +333,6 @@ def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
     _verify_code(f"email:{email}", body.verification_code)
 
     user.password = hash_password(body.password)
+    user.token_version = (user.token_version or 0) + 1
     db.commit()
     return {"message": "密码重置成功"}

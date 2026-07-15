@@ -1,32 +1,27 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from database import get_db
-from models import AppSetting, Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion
-from schemas import (
-    RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
-    ReviewCreate, ReviewOut,
-)
-from security import encrypt, decrypt, hash_for_lookup
-from image_utils import normalize_image_url, parse_image_list, serialize_image_list
+from models import Recipe, RecipeIngredient, RecipeVersion
+from security import encrypt, hash_for_lookup
 from auth_utils import current_user, user_id_from_request
+from services.recipe_access import require_recipe_owner
 from sqlalchemy import func
 from seger_calculator import calculate_seger
 from services.recipe_version import snapshot_recipe
-from color_names import color_name_in_range, get_color_range_config
 import json
 import logging
-from datetime import datetime
 
 logger = logging.getLogger('yunyao')
 
 router = APIRouter()
 
-@router.get("/{recipe_id}/versions")
-def list_recipe_versions(recipe_id: int, db: Session = Depends(get_db)):
+@router.get("/{recipe_id}/versions", dependencies=[Depends(current_user)])
+def list_recipe_versions(recipe_id: int, request: Request, db: Session = Depends(get_db)):
     """获取配方历史版本列表"""
     recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not recipe:
         raise HTTPException(status_code=404, detail="配方不存在")
+    require_recipe_owner(recipe, user_id_from_request(request))
     versions = db.query(RecipeVersion).filter(
         RecipeVersion.recipe_id == recipe_id
     ).order_by(RecipeVersion.version_no.desc()).all()
@@ -39,9 +34,13 @@ def list_recipe_versions(recipe_id: int, db: Session = Depends(get_db)):
     } for v in versions]
 
 
-@router.get("/{recipe_id}/versions/{version_id}")
-def get_recipe_version_detail(recipe_id: int, version_id: int, db: Session = Depends(get_db)):
+@router.get("/{recipe_id}/versions/{version_id}", dependencies=[Depends(current_user)])
+def get_recipe_version_detail(recipe_id: int, version_id: int, request: Request, db: Session = Depends(get_db)):
     """获取某个版本的完整数据"""
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="配方不存在")
+    require_recipe_owner(recipe, user_id_from_request(request))
     version = db.query(RecipeVersion).filter(
         RecipeVersion.id == version_id,
         RecipeVersion.recipe_id == recipe_id,

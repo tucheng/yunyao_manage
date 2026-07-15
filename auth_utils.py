@@ -72,6 +72,7 @@ def create_access_token(user: User) -> str:
     payload = {
         "sub": str(user.id),
         "role": user_role(user),
+        "ver": int(user.token_version or 0),
         "iat": now,
         "exp": now + ACCESS_TOKEN_EXPIRE_SECONDS,
     }
@@ -126,6 +127,9 @@ def get_current_user(request: Request, db: Session) -> User:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    payload = decode_access_token(token_from_request(request))
+    if int(payload.get("ver", 0)) != int(user.token_version or 0):
+        raise HTTPException(status_code=401, detail="Token revoked")
     return user
 
 
