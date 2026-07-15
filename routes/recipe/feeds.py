@@ -9,7 +9,7 @@ from schemas import (
 from security import encrypt, decrypt, hash_for_lookup
 from image_utils import normalize_image_url, parse_image_list, serialize_image_list
 from auth_utils import current_user, user_id_from_request
-from sqlalchemy import func
+from sqlalchemy import func, or_
 from seger_calculator import calculate_seger
 from services.recipe_version import snapshot_recipe
 from color_names import color_name_in_range, get_color_range_config
@@ -128,11 +128,22 @@ def favorite_recipes(
     page_size: int = Query(default=20, alias="page_size"),
     db: Session = Depends(get_db),
 ):
-    # 先查总数
-    total = db.query(Favorite).filter(Favorite.user_id == user_id).count()
-    favs = (
+    # 私密配方改为不可见后，不再通过收藏列表、总数或分页位置泄露。
+    visible_favorites = (
         db.query(Favorite)
-        .filter(Favorite.user_id == user_id)
+        .outerjoin(Recipe, Favorite.recipe_id == Recipe.id)
+        .filter(
+            Favorite.user_id == user_id,
+            or_(
+                Favorite.recipe_id.is_(None),
+                Recipe.visibility.in_(("public", "showoff")),
+                Recipe.user_id == user_id,
+            ),
+        )
+    )
+    total = visible_favorites.count()
+    favs = (
+        visible_favorites
         .order_by(Favorite.created_at.desc())
         .offset((page - 1) * page_size)
         .limit(page_size)
@@ -143,7 +154,7 @@ def favorite_recipes(
         if f.recipe_id:
             rid = f.recipe_id
             recipe = db.query(Recipe).filter(Recipe.id == rid).first()
-            if recipe:
+            if recipe and (recipe.visibility in ("public", "showoff") or recipe.user_id == user_id):
                 user = db.query(User).filter(User.id == recipe.user_id).first()
                 result.append({
                     "id": recipe.id,

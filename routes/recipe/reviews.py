@@ -12,6 +12,7 @@ from auth_utils import current_user, user_id_from_request
 from sqlalchemy import func
 from seger_calculator import calculate_seger
 from services.recipe_version import snapshot_recipe
+from services.recipe_access import require_recipe_reader
 from color_names import color_name_in_range, get_color_range_config
 import json
 import logging
@@ -21,8 +22,22 @@ logger = logging.getLogger('yunyao')
 
 router = APIRouter()
 
+def _require_reviewable_recipe(db: Session, recipe_id: int, request: Request) -> Recipe:
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="配方不存在")
+    require_recipe_reader(
+        db,
+        recipe,
+        getattr(request.state, "user_id", None),
+        consume_quota=True,
+    )
+    return recipe
+
+
 @router.post("/review", dependencies=[Depends(current_user)])
-def create_review(body: ReviewCreate, user_id: int = Query(...), db: Session = Depends(get_db)):
+def create_review(body: ReviewCreate, request: Request, user_id: int = Query(...), db: Session = Depends(get_db)):
+    _require_reviewable_recipe(db, body.recipe_id, request)
     # 如果是回复，验证父评论存在
     parent = None
     if body.parent_id:
@@ -66,8 +81,10 @@ def create_review(body: ReviewCreate, user_id: int = Query(...), db: Session = D
     }
 
 
-@router.get("/{recipe_id}/reviews", response_model=list[ReviewOut])
-def list_reviews(recipe_id: int, db: Session = Depends(get_db)):
+@router.get("/{recipe_id}/reviews", response_model=list[ReviewOut], dependencies=[Depends(current_user)])
+def list_reviews(recipe_id: int, request: Request, db: Session = Depends(get_db)):
+    _require_reviewable_recipe(db, recipe_id, request)
+    db.commit()
     # 手动查所有回复，按 parent_id 分组
     all_replies = db.query(Review).filter(
         Review.recipe_id == recipe_id,

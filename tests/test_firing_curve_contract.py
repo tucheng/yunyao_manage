@@ -5,7 +5,7 @@ from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
 
 from database import Base
-from models import FiringCurve, Recipe, User
+from models import FiringCurve, Recipe, RecipeIngredient, User
 from routes.curves import DEFAULT_USER_CURVES, create_default_user_curves
 from schemas import RecipeCreate, RecipeOut, RecipeUpdate
 
@@ -43,6 +43,9 @@ class FiringCurveContractTests(unittest.TestCase):
 
     def test_default_curve_definitions_remain_exactly_two(self):
         self.assertEqual(len(DEFAULT_USER_CURVES), 2)
+
+    def test_encrypted_ingredient_amount_column_has_room_for_ciphertext(self):
+        self.assertGreaterEqual(RecipeIngredient.__table__.c.amount.type.length, 500)
 
 
 if __name__ == "__main__":
