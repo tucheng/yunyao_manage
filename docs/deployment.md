@@ -38,7 +38,9 @@
 
 ## 数据库迁移
 
-容器每次启动先执行 `alembic upgrade head`，成功后才初始化幂等预置数据并启动 API。应用启动过程不再自动建表。
+Compose 使用一次性 `migrate` 服务执行 `alembic upgrade head` 和幂等预置数据；
+`api` 等待该 Job 成功后才启动。API 容器入口不再执行迁移或初始化，扩容 worker
+和滚动发布不会重复运行数据库变更。
 
 现有数据库第一次接入时也直接执行：
 
@@ -47,11 +49,22 @@ alembic upgrade head
 alembic current
 ```
 
+每日等级与额度维护由外部调度器运行：
+
+```bash
+docker compose --profile jobs run --rm maintenance
+```
+
+任务使用 MySQL `GET_LOCK`，即使调度器重试或多实例同时触发也只会执行一次。
+
 迁移前必须做数据库快照。`0002_remove_legacy_features` 删除了付费和旧材料数据，无法通过 downgrade 恢复。
 
 ## 对象存储
 
-Compose 默认提供自托管 MinIO，并自动创建公开读、认证写的 `yunyao-uploads` bucket。上传 API 只接受登录用户，浏览器通过 `/media/<bucket>/...` 读取图片。
+Compose 默认提供自托管 MinIO，并创建仅对象下载、认证写的 `yunyao-uploads`
+bucket；下载策略不得包含 ListBucket/目录枚举权限。上传 API 只接受登录用户，
+浏览器通过 `/media/<bucket>/...` 读取图片。上线前应按业务保留期配置未引用对象
+清理和生命周期规则。
 
 使用云厂商 OSS/COS/S3 时：
 

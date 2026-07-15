@@ -1,76 +1,136 @@
-"""数据加密模块 - 对配方原料和用量进行加密存储。"""
+"""Versioned application encryption and stable lookup hashing.
 
-import os
+Ciphertext format: ``enc:v1:<key-id>:<fernet-token>``.  The key id makes
+rotation deterministic; all configured keys remain decrypt-only candidates.
+"""
+
+from __future__ import annotations
+
 import base64
 import hashlib
-from cryptography.fernet import Fernet
+import json
+import os
+from functools import lru_cache
+
+from cryptography.fernet import Fernet, InvalidToken
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
-from app_config import ENCRYPTION_KEY_FILE, RECIPE_ENCRYPT_KEY
 
-KEY_FILE = ENCRYPTION_KEY_FILE
-ENV_PASSWORD = RECIPE_ENCRYPT_KEY
+from app_config import (
+    ENCRYPTION_ACTIVE_KEY_ID,
+    ENCRYPTION_KEY_FILE,
+    ENCRYPTION_KEYS,
+    PERSONAL_DATA_ENCRYPTION_KEY,
+    RECIPE_ENCRYPT_KEY,
+)
 
-
-def _get_key() -> bytes:
-    """获取加密密钥"""
-    if ENV_PASSWORD:
-        # 用环境变量密码派生密钥
-        salt = b"xiacaifang_salt_v1"
-        kdf = PBKDF2HMAC(algorithm=hashes.SHA256(), length=32, salt=salt, iterations=100000)
-        return base64.urlsafe_b64encode(kdf.derive(ENV_PASSWORD.encode()))
-
-    # 文件模式：自动生成
-    if not os.path.exists(KEY_FILE):
-        key = Fernet.generate_key()
-        with open(KEY_FILE, "wb") as f:
-            f.write(key)
-        os.chmod(KEY_FILE, 0o600)  # 仅 owner 可读写
-    else:
-        with open(KEY_FILE, "rb") as f:
-            key = f.read()
-    return key
+PREFIX = "enc:v1:"
 
 
-def _get_cipher() -> Fernet:
-    return Fernet(_get_key())
+class EncryptionError(ValueError):
+    """Raised when ciphertext is malformed or cannot be decrypted."""
 
 
-def encrypt(text: str) -> str:
-    """加密文本，返回 base64 字符串"""
-    if not text:
-        return text
-    cipher = _get_cipher()
-    return cipher.encrypt(text.encode()).decode()
+def _derive_legacy_recipe_key(password: str) -> bytes:
+    kdf = PBKDF2HMAC(
+        algorithm=hashes.SHA256(), length=32, salt=b"xiacaifang_salt_v1", iterations=100000,
+    )
+    return base64.urlsafe_b64encode(kdf.derive(password.encode()))
 
 
-def decrypt(text: str) -> str:
-    """解密 base64 字符串"""
-    if not text:
-        return text
+@lru_cache(maxsize=1)
+def _keyring() -> tuple[str, dict[str, Fernet]]:
+    raw: dict[str, str] = {}
+    if ENCRYPTION_KEYS:
+        try:
+            parsed = json.loads(ENCRYPTION_KEYS)
+            if not isinstance(parsed, dict):
+                raise TypeError
+            raw.update({str(key): str(value) for key, value in parsed.items()})
+        except (TypeError, ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError("ENCRYPTION_KEYS 必须是 key-id 到 Fernet key 的 JSON 对象") from exc
+    if PERSONAL_DATA_ENCRYPTION_KEY:
+        raw.setdefault("legacy-pii", PERSONAL_DATA_ENCRYPTION_KEY)
+    if RECIPE_ENCRYPT_KEY:
+        raw.setdefault("legacy-recipe", _derive_legacy_recipe_key(RECIPE_ENCRYPT_KEY).decode())
+    if ENCRYPTION_KEY_FILE and os.path.isfile(ENCRYPTION_KEY_FILE):
+        with open(ENCRYPTION_KEY_FILE, encoding="ascii") as key_file:
+            raw.setdefault("legacy-file", key_file.read().strip())
+    if not raw:
+        raise RuntimeError("没有可用的加密密钥")
+    active = ENCRYPTION_ACTIVE_KEY_ID
+    if active not in raw:
+        # Backward-compatible startup when a single legacy key is configured.
+        if active == "primary" and "legacy-pii" in raw:
+            active = "legacy-pii"
+        elif active == "primary" and "legacy-recipe" in raw:
+            active = "legacy-recipe"
+        elif len(raw) == 1:
+            active = next(iter(raw))
+        else:
+            raise RuntimeError(f"ENCRYPTION_ACTIVE_KEY_ID={active!r} 不在 ENCRYPTION_KEYS 中")
     try:
-        cipher = _get_cipher()
-        return cipher.decrypt(text.encode()).decode()
-    except Exception:
-        # 如果不是加密数据（旧数据未加密），原样返回
-        return text
+        return active, {key_id: Fernet(value.encode("ascii")) for key_id, value in raw.items()}
+    except (ValueError, TypeError) as exc:
+        raise RuntimeError("加密密钥不是有效的 Fernet key") from exc
 
 
-def is_encrypted(text: str) -> bool:
-    """判断是否是加密数据"""
-    if not text:
+def encrypt(plaintext: str) -> str:
+    if not plaintext:
+        return ""
+    active, keys = _keyring()
+    token = keys[active].encrypt(plaintext.encode()).decode()
+    return f"{PREFIX}{active}:{token}"
+
+
+def decrypt(ciphertext: str, *, allow_plaintext: bool = False) -> str:
+    if not ciphertext:
+        return ""
+    _active, keys = _keyring()
+    if ciphertext.startswith(PREFIX):
+        try:
+            key_id, token = ciphertext[len(PREFIX):].split(":", 1)
+        except ValueError as exc:
+            raise EncryptionError("密文版本头格式错误") from exc
+        cipher = keys.get(key_id)
+        if cipher is None:
+            raise EncryptionError(f"密文使用了未配置的密钥: {key_id}")
+        try:
+            return cipher.decrypt(token.encode()).decode()
+        except (InvalidToken, UnicodeDecodeError) as exc:
+            raise EncryptionError("密文校验或解密失败") from exc
+
+    # Legacy Fernet values had no version prefix. Try every retained key.
+    for cipher in keys.values():
+        try:
+            return cipher.decrypt(ciphertext.encode()).decode()
+        except (InvalidToken, UnicodeDecodeError):
+            continue
+    if allow_plaintext and not ciphertext.startswith("gAAAA"):
+        return ciphertext
+    raise EncryptionError("无法解密旧版密文；未将密文作为明文返回")
+
+
+def is_encrypted(value: str) -> bool:
+    if not value:
         return False
     try:
-        # 尝试解密，成功则说明是加密的
-        cipher = _get_cipher()
-        cipher.decrypt(text.encode())
+        decrypt(value)
         return True
-    except Exception:
+    except EncryptionError:
         return False
+
+
+def needs_rotation(value: str) -> bool:
+    active, _keys = _keyring()
+    return not value.startswith(f"{PREFIX}{active}:")
+
+
+def rotate(value: str) -> str:
+    return encrypt(decrypt(value)) if needs_rotation(value) else value
 
 
 def hash_for_lookup(value: str) -> str:
-    """生成用于搜索的 SHA-256 哈希值"""
     if not value:
         return ""
-    return hashlib.sha256(value.strip().encode()).hexdigest()
+    return hashlib.sha256(value.strip().lower().encode()).hexdigest()

@@ -1,8 +1,10 @@
 #!/bin/sh
 set -eu
 
-alembic upgrade head
-python -B init_db.py
+if [ "${APP_ENV:-development}" = "production" ] && [ "${FORWARDED_ALLOW_IPS:-}" = "*" ]; then
+  echo "FORWARDED_ALLOW_IPS=* is forbidden in production" >&2
+  exit 1
+fi
 
 exec uvicorn main:app \
   --host 0.0.0.0 \

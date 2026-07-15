@@ -162,22 +162,35 @@ def run_daily_maintenance(db: Session) -> tuple[int, int]:
     now = datetime.now()
     downgraded = 0
     refreshed = 0
+    ensure_system_levels(db)
     users = db.query(User).all()
+    levels = {level.id: level for level in db.query(UserLevel).all()}
+    quotas = {quota.user_id: quota for quota in db.query(UserUsageQuota).all()}
+    redeemed_user_ids = {
+        user_id for (user_id,) in db.query(RedeemLog.user_id).distinct().all()
+    }
     for user in users:
         upgraded_from_redeem = False
         if (
             user.level_id == TRIAL_LEVEL_ID
             and user.expires_at
             and user.expires_at > now
-            and db.query(RedeemLog.id).filter(RedeemLog.user_id == user.id).first()
+            and user.id in redeemed_user_ids
         ):
             user.level_id = MEMBER_LEVEL_ID
             upgraded_from_redeem = True
         if downgrade_user_if_expired(user, now):
             downgraded += 1
-        quota = db.query(UserUsageQuota).filter(UserUsageQuota.user_id == user.id).first()
+        quota = quotas.get(user.id)
         if upgraded_from_redeem or quota is None or quota.quota_date != business_today():
-            get_or_create_quota(db, user, force_reset=True)
+            level = levels.get(user.level_id or TRIAL_LEVEL_ID)
+            if level is None:
+                raise RuntimeError(f"Missing user level {user.level_id}")
+            if quota is None:
+                quota = UserUsageQuota(user_id=user.id, quota_date=business_today())
+                db.add(quota)
+                quotas[user.id] = quota
+            _reset_quota(quota, level, business_today())
             refreshed += 1
     db.commit()
     return downgraded, refreshed

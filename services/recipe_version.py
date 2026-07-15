@@ -8,7 +8,9 @@ from security import decrypt
 
 def snapshot_recipe(recipe_id: int, db, note: str = "", user_id: int = 0):
     """保存当前配方快照到 recipe_versions"""
-    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    # Serialize version allocation per recipe; the DB unique constraint is the
+    # final guard against duplicate version numbers.
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).with_for_update().first()
     if not recipe:
         return
     ingredients = db.query(RecipeIngredient).filter(

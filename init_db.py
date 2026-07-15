@@ -30,7 +30,6 @@ DEFAULT_VERIFICATION_SETTINGS = {
     "smtp_host": "",
     "smtp_port": "465",
     "smtp_username": "",
-    "smtp_password": "",
     "smtp_from": "",
     "smtp_use_ssl": "1",
     "email_subject": "云窑验证码",

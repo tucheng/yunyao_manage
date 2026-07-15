@@ -2,10 +2,11 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_, and_, func, desc
 from database import get_db
+from auth_utils import current_user
 from models import User, Follow, Message
 from routes.notifications import add_notification
 
-router = APIRouter(prefix="/social", tags=["社交"])
+router = APIRouter(prefix="/social", tags=["社交"], dependencies=[Depends(current_user)])
 
 
 # ========= 关注/取关 =========

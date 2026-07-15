@@ -31,11 +31,21 @@ EXPECTED_ROUTES = {
 }
 
 
+def iter_routes(current_router, prefix=""):
+    """Expand FastAPI 0.139's deferred included-router entries."""
+    for route in current_router.routes:
+        if hasattr(route, "methods"):
+            yield route, f"{prefix}{route.path}"
+            continue
+        context = route.include_context
+        yield from iter_routes(route.original_router, f"{prefix}{context.prefix}")
+
+
 class RecipeRouteContractTests(unittest.TestCase):
     def test_recipe_route_contract_is_complete_and_unique(self):
         actual = {
-            (method, route.path, route.name)
-            for route in router.routes
+            (method, path, route.name)
+            for route, path in iter_routes(router)
             for method in route.methods
         }
         self.assertEqual(EXPECTED_ROUTES, actual)
@@ -43,8 +53,8 @@ class RecipeRouteContractTests(unittest.TestCase):
 
     def test_static_get_routes_are_registered_before_recipe_id_route(self):
         get_paths = [
-            route.path
-            for route in router.routes
+            path
+            for route, path in iter_routes(router)
             if "GET" in route.methods
         ]
         dynamic_index = get_paths.index("/recipes/{recipe_id}")

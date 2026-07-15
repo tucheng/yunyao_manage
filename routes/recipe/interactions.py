@@ -8,7 +8,7 @@ from schemas import (
 )
 from security import encrypt, decrypt, hash_for_lookup
 from image_utils import normalize_image_url, parse_image_list, serialize_image_list
-from auth_utils import user_id_from_request
+from auth_utils import current_user, user_id_from_request
 from sqlalchemy import func
 from seger_calculator import calculate_seger
 from services.recipe_version import snapshot_recipe
@@ -19,7 +19,7 @@ from datetime import datetime
 
 logger = logging.getLogger('yunyao')
 
-router = APIRouter()
+router = APIRouter(dependencies=[Depends(current_user)])
 
 @router.post("/{recipe_id}/favorite")
 def toggle_favorite(recipe_id: int, user_id: int = Query(...), db: Session = Depends(get_db)):
@@ -81,4 +81,3 @@ def record_recipe_view(recipe_id: int, user_id: int = Query(...), db: Session = 
         db.commit()
     db.commit()
     return {"ok": True, "quota_consumed": consumed, "remaining": remaining}
-

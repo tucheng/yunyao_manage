@@ -1,12 +1,13 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from database import get_db
+from auth_utils import current_user
 from models import UserSettings, FiringCurve
 from pydantic import BaseModel
 from typing import Optional
 import json
 
-router = APIRouter(prefix="/settings", tags=["用户设置"])
+router = APIRouter(prefix="/settings", tags=["用户设置"], dependencies=[Depends(current_user)])
 
 
 class SettingsUpdate(BaseModel):

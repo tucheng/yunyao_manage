@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, Date, DateTime, ForeignKey, Boolean, UniqueConstraint, text
+from sqlalchemy import Column, Integer, String, Text, Float, Date, DateTime, ForeignKey, Boolean, UniqueConstraint, CheckConstraint, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -21,7 +21,7 @@ class User(Base):
     birthday = Column(String(20), default="")  # 生日
     location = Column(String(100), default="")  # 所在地
     trust_score = Column(Float, default=100.0)  # 信任分 0-100
-    level_id = Column(Integer, ForeignKey("user_levels.id"), default=5)
+    level_id = Column(Integer, ForeignKey("user_levels.id", ondelete="RESTRICT"), default=5)
     is_muted = Column(Boolean, default=False)
     is_admin = Column(Boolean, default=False)
     expires_at = Column(DateTime(timezone=True), nullable=False, server_default=text("'2027-07-09 00:00:00'"), comment="使用期限")
@@ -30,14 +30,14 @@ class User(Base):
     @classmethod
     def by_email(cls, db, email: str):
         """通过邮箱查找用户（使用哈希匹配）"""
-        from encryption_utils import hash_for_lookup
+        from security import hash_for_lookup
         h = hash_for_lookup(email)
         return db.query(cls).filter(cls.email_hash == h).first() if h else None
 
     @classmethod
     def by_phone(cls, db, phone: str):
         """通过手机号查找用户（使用哈希匹配）"""
-        from encryption_utils import hash_for_lookup
+        from security import hash_for_lookup
         h = hash_for_lookup(phone)
         return db.query(cls).filter(cls.phone_hash == h).first() if h else None
 
@@ -54,7 +54,7 @@ class Recipe(Base):
     __tablename__ = "recipes"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     title = Column(String(100), nullable=False)
     recipe_no = Column(String(10), unique=True, index=True, nullable=True)  # 编号：A001-Z999
     type = Column(String(20), default="recipe")  # recipe / firing / matching
@@ -85,10 +85,10 @@ class Review(Base):
     __tablename__ = "reviews"
 
     id = Column(Integer, primary_key=True, index=True)
-    parent_id = Column(Integer, ForeignKey("reviews.id"), nullable=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
-    work_id = Column(Integer, ForeignKey("works.id"), nullable=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    parent_id = Column(Integer, ForeignKey("reviews.id", ondelete="CASCADE"), nullable=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=True)
+    work_id = Column(Integer, ForeignKey("works.id", ondelete="CASCADE"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     rating = Column(Integer, default=5)
     content = Column(Text, default="")
     image = Column(String(200), default="")
@@ -103,11 +103,16 @@ class Review(Base):
 
 class Favorite(Base):
     __tablename__ = "favorites"
+    __table_args__ = (
+        UniqueConstraint("user_id", "recipe_id", name="uq_favorite_user_recipe"),
+        UniqueConstraint("user_id", "work_id", name="uq_favorite_user_work"),
+        CheckConstraint("(recipe_id IS NULL) <> (work_id IS NULL)", name="ck_favorite_one_target"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
-    work_id = Column(Integer, ForeignKey("works.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=True)
+    work_id = Column(Integer, ForeignKey("works.id", ondelete="CASCADE"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -116,12 +121,12 @@ class UserMaterial(Base):
     __tablename__ = "user_materials"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     name = Column(String(100), nullable=False)
     category = Column(String(50), default="")
     status = Column(String(10), default="owned")  # 'owned' 或 'wishlist'
-    from_recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
-    work_id = Column(Integer, ForeignKey("works.id"), nullable=True)
+    from_recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True)
+    work_id = Column(Integer, ForeignKey("works.id", ondelete="SET NULL"), nullable=True)
     sort_order = Column(Integer, default=0)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -131,7 +136,7 @@ class FiringCurve(Base):
     __tablename__ = "firing_curves"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True, comment="所属用户，null=系统默认")
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True, comment="所属用户，null=系统默认")
     name = Column(String(100), nullable=False)
     type = Column(String(20), default="氧化")  # 氧化 / 还原
     target_temp = Column(String(20), default="")  # 目标温度，如"1220℃"
@@ -146,8 +151,8 @@ class Work(Base):
     __tablename__ = "works"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)  # 可选关联配方
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True)  # 可选关联配方
     image = Column(Text, nullable=False)  # 作品主图
     images = Column(Text, default="[]")  # JSON 数组：多图URL
     description = Column(Text, default="")
@@ -160,7 +165,7 @@ class Work(Base):
     glaze_colors = Column(Text, default="[]")  # JSON: [{hex, r, g, b, name}]
     surface = Column(String(20), default="")  # 釉面质感：亮光/丝光/蜡光/柔光/无光/磨砂
     transparency = Column(String(20), default="")  # 透明度：高透/微透/半透/不透
-    curve_id = Column(Integer, ForeignKey("firing_curves.id"), nullable=True)  # 关联烧制曲线
+    curve_id = Column(Integer, ForeignKey("firing_curves.id", ondelete="SET NULL"), nullable=True)  # 关联烧制曲线
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -169,9 +174,9 @@ class WorkComment(Base):
     __tablename__ = "work_comments"
 
     id = Column(Integer, primary_key=True, index=True)
-    parent_id = Column(Integer, ForeignKey("work_comments.id"), nullable=True)
-    work_id = Column(Integer, ForeignKey("works.id"), nullable=False)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    parent_id = Column(Integer, ForeignKey("work_comments.id", ondelete="CASCADE"), nullable=True)
+    work_id = Column(Integer, ForeignKey("works.id", ondelete="CASCADE"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -179,10 +184,14 @@ class WorkComment(Base):
 class Follow(Base):
     """用户关注"""
     __tablename__ = "follows"
+    __table_args__ = (
+        UniqueConstraint("follower_id", "followed_id", name="uq_follow_pair"),
+        CheckConstraint("follower_id <> followed_id", name="ck_follow_not_self"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    follower_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    followed_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    follower_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    followed_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -191,8 +200,8 @@ class RecipeView(Base):
     __tablename__ = "recipe_views"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -201,7 +210,7 @@ class RecipeIngredient(Base):
     __tablename__ = "recipe_ingredients"
 
     id = Column(Integer, primary_key=True, index=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False, index=True)
     recipe_no = Column(String(10), default="")
     name = Column(String(200), nullable=False, default="")  # AES 加密存储
     name_en = Column(String(200), default="")
@@ -224,11 +233,16 @@ class IngredientName(Base):
 class Like(Base):
     """点赞记录（通用：配方/作品）"""
     __tablename__ = "likes"
+    __table_args__ = (
+        UniqueConstraint("user_id", "recipe_id", name="uq_like_user_recipe"),
+        UniqueConstraint("user_id", "work_id", name="uq_like_user_work"),
+        CheckConstraint("(recipe_id IS NULL) <> (work_id IS NULL)", name="ck_like_one_target"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
-    work_id = Column(Integer, ForeignKey("works.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=True)
+    work_id = Column(Integer, ForeignKey("works.id", ondelete="CASCADE"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -237,11 +251,11 @@ class Message(Base):
     __tablename__ = "messages"
 
     id = Column(Integer, primary_key=True, index=True)
-    sender_id = Column(Integer, ForeignKey("users.id"), nullable=False)
-    receiver_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    sender_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
+    receiver_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False)
     content = Column(Text, nullable=False)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True)
-    work_id = Column(Integer, ForeignKey("works.id"), nullable=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True)
+    work_id = Column(Integer, ForeignKey("works.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     is_read = Column(Boolean, default=False)
 
@@ -251,18 +265,18 @@ class Complaint(Base):
     __tablename__ = "complaints"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     content = Column(Text, nullable=False)
     images = Column(Text, default="")
     status = Column(String(20), default="open")
     reply = Column(Text, default="")
-    admin_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    admin_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     replied_at = Column(DateTime(timezone=True), nullable=True)
     is_resolved = Column(Boolean, default=False, nullable=False)
     resolved_at = Column(DateTime(timezone=True), nullable=True)
     is_closed = Column(Boolean, default=False, nullable=False)
     closed_at = Column(DateTime(timezone=True), nullable=True)
-    closed_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    closed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
@@ -271,8 +285,8 @@ class ComplaintReply(Base):
     __tablename__ = "complaint_replies"
 
     id = Column(Integer, primary_key=True, index=True)
-    complaint_id = Column(Integer, ForeignKey("complaints.id"), nullable=False, index=True)
-    admin_id = Column(Integer, ForeignKey("users.id"), nullable=False)
+    complaint_id = Column(Integer, ForeignKey("complaints.id", ondelete="CASCADE"), nullable=False, index=True)
+    admin_id = Column(Integer, ForeignKey("users.id", ondelete="RESTRICT"), nullable=False)
     content = Column(Text, nullable=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -319,7 +333,7 @@ class Material(Base):
     __tablename__ = "materials"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String(200), nullable=False, index=True)        # 中文名
     name_en = Column(String(200), default="")                      # 英文名
     source = Column(String(20), default="")                        # 'local' 或 'overseas'
@@ -361,7 +375,7 @@ class RecipeSeger(Base):
     __tablename__ = "recipe_seger"
 
     id = Column(Integer, primary_key=True, index=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, unique=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False, unique=True)
     seger_unified = Column(String(500), default="")       # 归一化表达式
     seger_al2o3 = Column(Float, nullable=True)             # Al₂O₃ 摩尔比
     seger_sio2 = Column(Float, nullable=True)              # SiO₂ 摩尔比
@@ -378,10 +392,15 @@ class RecipeSeger(Base):
 class MaterialSubstitution(Base):
     """材料相似关系表"""
     __tablename__ = "material_substitutions"
+    __table_args__ = (
+        UniqueConstraint("source_material_id", "target_material_id", name="uq_material_substitution_pair"),
+        CheckConstraint("source_material_id <> target_material_id", name="ck_material_substitution_not_self"),
+        CheckConstraint("similarity_score >= 0 AND similarity_score <= 100", name="ck_material_similarity_range"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    source_material_id = Column(Integer, ForeignKey("materials.id"), nullable=False, comment="源材料")
-    target_material_id = Column(Integer, ForeignKey("materials.id"), nullable=False, comment="相似材料")
+    source_material_id = Column(Integer, ForeignKey("materials.id", ondelete="CASCADE"), nullable=False, comment="源材料")
+    target_material_id = Column(Integer, ForeignKey("materials.id", ondelete="CASCADE"), nullable=False, comment="相似材料")
     similarity_score = Column(Float, default=0.0, comment="成分相似度 0-100")
     status = Column(String(20), nullable=True, comment="历史兼容字段，不再参与业务逻辑")
     note = Column(String(500), default="", comment="相似关系备注")
@@ -411,7 +430,7 @@ class UserUsageQuota(Base):
     """用户当日功能剩余额度及累计兑换次数。"""
     __tablename__ = "user_usage_quotas"
 
-    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     quota_date = Column(Date, nullable=False, index=True)
     # 数据库暂沿用 free_recipe_remaining 列名；应用层不再区分付费/免费配方。
     recipe_remaining = Column("free_recipe_remaining", Integer, nullable=False, default=0)
@@ -430,8 +449,8 @@ class UserDailyRecipeView(Base):
     )
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False, index=True)
     view_date = Column(Date, nullable=False, index=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
@@ -441,8 +460,8 @@ class ToBeFired(Base):
     __tablename__ = "to_be_fired"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=True, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="SET NULL"), nullable=True, index=True)
     note = Column(String(200), default="")  # 备注（如"用XX泥"）
     status = Column(String(20), default="pending")  # pending / firing / done
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -454,10 +473,10 @@ class Notification(Base):
     __tablename__ = "notifications"
 
     id = Column(Integer, primary_key=True, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
-    from_user_id = Column(Integer, ForeignKey("users.id"), nullable=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
+    from_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     type = Column(String(32), nullable=False)  # comment / follow / like / favorite
-    work_id = Column(Integer, ForeignKey("works.id"), nullable=True)
+    work_id = Column(Integer, ForeignKey("works.id", ondelete="CASCADE"), nullable=True)
     content = Column(Text, default="")
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -476,11 +495,11 @@ class UserSettings(Base):
     """用户默认设置（新建配方/作品时自动带入）"""
     __tablename__ = "user_settings"
 
-    user_id = Column(Integer, ForeignKey("users.id"), primary_key=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), primary_key=True)
     materials = Column(Text, default="[]")        # JSON: ["高岭土","长石",...]
     kiln_types = Column(Text, default="[]")       # JSON: ["电窑","气窑"]
     temperatures = Column(Text, default="[]")     # JSON: ["1220℃","1280℃"]
-    firing_curve_id = Column(Integer, ForeignKey("firing_curves.id"), nullable=True)
+    firing_curve_id = Column(Integer, ForeignKey("firing_curves.id", ondelete="SET NULL"), nullable=True)
     body_material = Column(String(50), default="")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
@@ -498,21 +517,30 @@ class AppSetting(Base):
 class RecipeVersion(Base):
     """配方历史版本快照"""
     __tablename__ = "recipe_versions"
+    __table_args__ = (
+        UniqueConstraint("recipe_id", "version_no", name="uq_recipe_version_no"),
+        CheckConstraint("version_no > 0", name="ck_recipe_version_positive"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id"), nullable=False, index=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False, index=True)
     version_no = Column(Integer, nullable=False)  # 1, 2, 3...
     recipe_data = Column(Text, nullable=False)  # JSON: recipe 表所有字段
     ingredients_data = Column(Text, nullable=False)  # JSON: ingredients 列表
     seger_data = Column(Text, nullable=True)  # JSON: seger 结果
     note = Column(String(200), default="")  # 自动生成的备注
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class RedeemCode(Base):
     """兑换码"""
     __tablename__ = "redeem_codes"
+    __table_args__ = (
+        CheckConstraint("days > 0", name="ck_redeem_days_positive"),
+        CheckConstraint("max_uses > 0", name="ck_redeem_max_uses_positive"),
+        CheckConstraint("current_uses >= 0 AND current_uses <= max_uses", name="ck_redeem_use_count"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
     code = Column(String(32), unique=True, index=True, nullable=False, comment="兑换码")
@@ -520,17 +548,21 @@ class RedeemCode(Base):
     max_uses = Column(Integer, default=1, comment="最大使用次数")
     current_uses = Column(Integer, default=0, comment="已使用次数")
     is_active = Column(Boolean, default=True)
-    created_by = Column(Integer, ForeignKey("users.id"), nullable=True)
+    created_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
 class RedeemLog(Base):
     """兑换记录"""
     __tablename__ = "redeem_logs"
+    __table_args__ = (
+        UniqueConstraint("code_id", "user_id", name="uq_redeem_log_code_user"),
+        CheckConstraint("days_added > 0", name="ck_redeem_log_days_positive"),
+    )
 
     id = Column(Integer, primary_key=True, index=True)
-    code_id = Column(Integer, ForeignKey("redeem_codes.id"), nullable=False, index=True)
-    user_id = Column(Integer, ForeignKey("users.id"), nullable=False, index=True)
+    code_id = Column(Integer, ForeignKey("redeem_codes.id", ondelete="CASCADE"), nullable=False, index=True)
+    user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     days_added = Column(Integer, nullable=False)
     before_expiry = Column(DateTime(timezone=True), nullable=True, comment="兑换前使用期限")
     after_expiry = Column(DateTime(timezone=True), nullable=True, comment="兑换后使用期限")

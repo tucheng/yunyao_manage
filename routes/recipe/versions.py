@@ -8,7 +8,7 @@ from schemas import (
 )
 from security import encrypt, decrypt, hash_for_lookup
 from image_utils import normalize_image_url, parse_image_list, serialize_image_list
-from auth_utils import user_id_from_request
+from auth_utils import current_user, user_id_from_request
 from sqlalchemy import func
 from seger_calculator import calculate_seger
 from services.recipe_version import snapshot_recipe
@@ -59,7 +59,7 @@ def get_recipe_version_detail(recipe_id: int, version_id: int, db: Session = Dep
     }
 
 
-@router.post("/{recipe_id}/versions/{version_id}/restore")
+@router.post("/{recipe_id}/versions/{version_id}/restore", dependencies=[Depends(current_user)])
 def restore_recipe_version(
     recipe_id: int, version_id: int,
     user_id: int = Query(...),
@@ -121,4 +121,3 @@ def restore_recipe_version(
 
     db.refresh(recipe)
     return recipe
-

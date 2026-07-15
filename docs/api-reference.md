@@ -444,7 +444,9 @@
 | GET | `/` | 健康检查 → `{ status: "running" }` | 无 |
 | GET | `/admin-panel` | 后台管理页面 | 无 |
 | GET | `/admin` 或 `/admin/` | 同 admin-panel | 无 |
-| GET | `/api/favorites` | 统一收藏列表（配方+作品合并） | `user_id, page, page_size` |
+遗留的 `GET /api/favorites` 已删除。收藏列表使用已鉴权的
+`GET /recipes/favorites`；作品收藏应通过正式 Router 增补，不得在
+`main.py` 中增加接收任意 `user_id` 的旁路接口。
 
 ### 静态挂载
 | 路径 | 说明 |

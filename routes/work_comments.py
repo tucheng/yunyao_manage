@@ -3,6 +3,7 @@ from sqlalchemy import inspect, text
 from sqlalchemy.orm import Session
 
 from database import get_db
+from auth_utils import current_user
 from models import User, Work, WorkComment
 from schemas import WorkCommentCreate, WorkCommentOut
 from routes.notifications import add_notification
@@ -70,7 +71,7 @@ def list_work_comments(work_id: int, db: Session = Depends(get_db)):
     return result
 
 
-@router.post("/{work_id}/comments", response_model=WorkCommentOut)
+@router.post("/{work_id}/comments", response_model=WorkCommentOut, dependencies=[Depends(current_user)])
 def create_work_comment(work_id: int, body: WorkCommentCreate, db: Session = Depends(get_db)):
     _ensure_comment_columns(db)
     content = body.content.strip()

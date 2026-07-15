@@ -7,6 +7,7 @@ from datetime import datetime
 import json
 from color_names import color_name_in_range, get_color_range_config, get_glaze_colors_data
 from image_utils import normalize_image_url, parse_image_list, serialize_image_list
+from auth_utils import current_user
 
 router = APIRouter(prefix="/works", tags=["作品"])
 
@@ -47,7 +48,7 @@ HAS_RECIPE_OPTIONS = [
 # ---------- 关注动态 ----------
 
 
-@router.get("/feed/following")
+@router.get("/feed/following", dependencies=[Depends(current_user)])
 def following_works(
     user_id: int = Query(...),
     page: int = 1,
@@ -505,7 +506,7 @@ def list_works(
     return result
 
 
-@router.put("/{work_id}")
+@router.put("/{work_id}", dependencies=[Depends(current_user)])
 def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
     """更新作品"""
     work = db.query(Work).filter(Work.id == work_id).first()
@@ -593,7 +594,7 @@ def update_work(work_id: int, data: dict, db: Session = Depends(get_db)):
     return {"id": work.id, "message": "更新成功"}
 
 
-@router.post("/")
+@router.post("/", dependencies=[Depends(current_user)])
 def create_work(
     data: dict,
     db: Session = Depends(get_db),
@@ -688,7 +689,7 @@ def create_work(
     return {"id": work.id, "message": "发布成功"}
 
 
-@router.post("/{work_id}/favorite")
+@router.post("/{work_id}/favorite", dependencies=[Depends(current_user)])
 def toggle_work_favorite(work_id: int, data: dict, db: Session = Depends(get_db)):
     """点赞/取消点赞作品"""
     user_id = data.get("user_id", 0)
@@ -708,7 +709,7 @@ def toggle_work_favorite(work_id: int, data: dict, db: Session = Depends(get_db)
     return {"favorited": True, "favorite_count": db.query(Favorite).filter(Favorite.work_id == work_id).count()}
 
 
-@router.post("/{work_id}/like")
+@router.post("/{work_id}/like", dependencies=[Depends(current_user)])
 def toggle_work_like(work_id: int, user_id: int = Query(...), db: Session = Depends(get_db)):
     work = db.query(Work).filter(Work.id == work_id).first()
     if not work:
@@ -729,7 +730,7 @@ def toggle_work_like(work_id: int, user_id: int = Query(...), db: Session = Depe
     return {"liked": True, "likes": work.likes}
 
 
-@router.post("/{work_id}/link_recipe")
+@router.post("/{work_id}/link_recipe", dependencies=[Depends(current_user)])
 def link_work_recipe(work_id: int, data: dict, db: Session = Depends(get_db)):
     user_id = data.get("user_id", 0)
     recipe_id = data.get("recipe_id", 0)

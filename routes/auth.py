@@ -12,7 +12,7 @@ from PIL import Image, ImageDraw, ImageFont
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from auth_utils import auth_payload, hash_password, verify_password, token_from_request, decode_access_token, user_role
+from auth_utils import auth_payload, current_user, hash_password, verify_password, token_from_request, decode_access_token, user_role
 from database import get_db
 from encryption_utils import encrypt, hash_for_lookup
 from models import User
@@ -325,7 +325,7 @@ def login(body: LoginRequest, db: Session = Depends(get_db)):
     raise HTTPException(status_code=400, detail="请提供登录方式")
 
 
-@router.put("/nickname")
+@router.put("/nickname", dependencies=[Depends(current_user)])
 def update_nickname(body: NicknameUpdate, user_id: int = Query(...), db: Session = Depends(get_db)):
     user = db.query(User).filter(User.id == user_id).first()
     if not user:

@@ -8,7 +8,7 @@ from schemas import (
 )
 from security import encrypt, decrypt, hash_for_lookup
 from image_utils import normalize_image_url, parse_image_list, serialize_image_list
-from auth_utils import user_id_from_request
+from auth_utils import current_user, user_id_from_request
 from sqlalchemy import func
 from seger_calculator import calculate_seger
 from services.recipe_version import snapshot_recipe
@@ -21,7 +21,7 @@ logger = logging.getLogger('yunyao')
 
 router = APIRouter()
 
-@router.post("/review")
+@router.post("/review", dependencies=[Depends(current_user)])
 def create_review(body: ReviewCreate, user_id: int = Query(...), db: Session = Depends(get_db)):
     # 如果是回复，验证父评论存在
     parent = None

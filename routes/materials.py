@@ -6,6 +6,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 from database import get_db
+from auth_utils import current_user
 from models import Material, MaterialSubstitution, UserMaterial
 from services.material_similarity import (
     TOP_SIMILAR_MATERIALS,
@@ -187,7 +188,7 @@ def _clean_molecule_data(data: dict, *, partial: bool = False) -> dict:
     return cleaned
 
 
-@router.get("/molecules")
+@router.get("/molecules", dependencies=[Depends(current_user)])
 def list_my_material_molecules(
     request: Request,
     q: str = Query(""),
@@ -216,7 +217,7 @@ def list_my_material_molecules(
     }
 
 
-@router.post("/molecules")
+@router.post("/molecules", dependencies=[Depends(current_user)])
 def create_material_molecule(data: dict, request: Request, db: Session = Depends(get_db)):
     user_id = _request_user_id(request)
     cleaned = _clean_molecule_data(data)
@@ -236,7 +237,7 @@ def create_material_molecule(data: dict, request: Request, db: Session = Depends
     return _catalog_payload(material)
 
 
-@router.put("/molecules/{material_id}")
+@router.put("/molecules/{material_id}", dependencies=[Depends(current_user)])
 def update_material_molecule(
     material_id: int,
     data: dict,
@@ -260,7 +261,7 @@ def update_material_molecule(
     return _catalog_payload(material)
 
 
-@router.delete("/molecules/{material_id}")
+@router.delete("/molecules/{material_id}", dependencies=[Depends(current_user)])
 def delete_material_molecule(material_id: int, request: Request, db: Session = Depends(get_db)):
     user_id = _request_user_id(request)
     material = db.query(Material).filter(
@@ -322,7 +323,7 @@ def get_material_catalog_item(material_id: int, db: Session = Depends(get_db)):
     return _catalog_payload(material)
 
 
-@router.get("")
+@router.get("", dependencies=[Depends(current_user)])
 def list_materials(
     user_id: int = Query(...),
     status: Optional[str] = Query(None),
@@ -354,7 +355,7 @@ def list_materials(
     ]}
 
 
-@router.get("/categories")
+@router.get("/categories", dependencies=[Depends(current_user)])
 def list_categories(user_id: int = Query(...), db: Session = Depends(get_db)):
     rows = db.query(UserMaterial.category, func.count(UserMaterial.id)).filter(
         UserMaterial.user_id == user_id,
@@ -362,7 +363,7 @@ def list_categories(user_id: int = Query(...), db: Session = Depends(get_db)):
     return [{"name": r[0] or "未分类", "count": r[1]} for r in rows]
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(current_user)])
 def add_material(data: dict, user_id: int = Query(...), db: Session = Depends(get_db)):
     name = data.get("name", "").strip()
     if not name:
@@ -374,7 +375,7 @@ def add_material(data: dict, user_id: int = Query(...), db: Session = Depends(ge
     return {"message": "添加成功", "id": item.id}
 
 
-@router.put("/{item_id}")
+@router.put("/{item_id}", dependencies=[Depends(current_user)])
 def update_material(item_id: int, data: dict, user_id: int = Query(...), db: Session = Depends(get_db)):
     item = db.query(UserMaterial).filter(
         UserMaterial.id == item_id, UserMaterial.user_id == user_id,
@@ -399,7 +400,7 @@ def update_material(item_id: int, data: dict, user_id: int = Query(...), db: Ses
     return {"message": "更新成功", "id": item.id}
 
 
-@router.delete("/{item_id}")
+@router.delete("/{item_id}", dependencies=[Depends(current_user)])
 def delete_material(item_id: int, user_id: int = Query(...), db: Session = Depends(get_db)):
     item = db.query(UserMaterial).filter(
         UserMaterial.id == item_id, UserMaterial.user_id == user_id,
@@ -411,7 +412,7 @@ def delete_material(item_id: int, user_id: int = Query(...), db: Session = Depen
     return {"message": "已删除"}
 
 
-@router.post("/batch_delete")
+@router.post("/batch_delete", dependencies=[Depends(current_user)])
 def batch_delete(data: dict, user_id: int = Query(...), db: Session = Depends(get_db)):
     ids = data.get("ids", [])
     if not ids:
@@ -423,7 +424,7 @@ def batch_delete(data: dict, user_id: int = Query(...), db: Session = Depends(ge
     return {"message": f"已删除 {deleted} 种材料"}
 
 
-@router.post("/wishlist")
+@router.post("/wishlist", dependencies=[Depends(current_user)])
 def add_to_wishlist(data: dict, user_id: int = Query(...), db: Session = Depends(get_db)):
     name = data.get("name", "").strip()
     if not name:
@@ -435,7 +436,7 @@ def add_to_wishlist(data: dict, user_id: int = Query(...), db: Session = Depends
     return {"message": "已加入待购清单", "id": _.id}
 
 
-@router.post("/wishlist/batch")
+@router.post("/wishlist/batch", dependencies=[Depends(current_user)])
 def batch_add_wishlist(data: dict, user_id: int = Query(...), db: Session = Depends(get_db)):
     names = data.get("names", [])
     from_recipe_id = data.get("from_recipe_id")
@@ -450,7 +451,7 @@ def batch_add_wishlist(data: dict, user_id: int = Query(...), db: Session = Depe
     return {"message": f"已添加 {added} 种材料到待购清单"}
 
 
-@router.post("/wishlist/move/{item_id}")
+@router.post("/wishlist/move/{item_id}", dependencies=[Depends(current_user)])
 def move_to_materials(item_id: int, user_id: int = Query(...), db: Session = Depends(get_db)):
     wm = db.query(UserMaterial).filter(
         UserMaterial.id == item_id,
@@ -465,7 +466,7 @@ def move_to_materials(item_id: int, user_id: int = Query(...), db: Session = Dep
     return {"message": "已移到材料库", "id": wm.id}
 
 
-@router.post("/move_to_wishlist/{item_id}")
+@router.post("/move_to_wishlist/{item_id}", dependencies=[Depends(current_user)])
 def move_to_wishlist(item_id: int, user_id: int = Query(...), db: Session = Depends(get_db)):
     m = db.query(UserMaterial).filter(
         UserMaterial.id == item_id,
@@ -480,7 +481,7 @@ def move_to_wishlist(item_id: int, user_id: int = Query(...), db: Session = Depe
     return {"message": "已移到待购清单", "id": m.id}
 
 
-@router.post("/wishlist/reorder")
+@router.post("/wishlist/reorder", dependencies=[Depends(current_user)])
 def reorder_wishlist(data: dict, user_id: int = Query(...), db: Session = Depends(get_db)):
     ids = data.get("ids", [])
     for i, wid in enumerate(ids):

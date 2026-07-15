@@ -1,16 +1,17 @@
 """兑换码：管理员生成、用户兑换使用期限"""
-import random
+import secrets
 import string
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
-from database import get_db
+from database import commit_or_conflict, get_db
 from models import User, RedeemCode, RedeemLog
 from services.user_quota import MEMBER_LEVEL_ID, get_or_create_quota, reset_user_quota
 from pydantic import BaseModel
+from sqlalchemy.exc import IntegrityError
 from typing import Optional
 from datetime import datetime, timedelta
 from routes.admin import verify_admin
-from auth_utils import user_id_from_request
+from auth_utils import current_user, user_id_from_request
 
 router = APIRouter(prefix="/redeem", tags=["兑换码"])
 
@@ -19,13 +20,14 @@ def _generate_code(length=10) -> str:
     chars = string.ascii_uppercase + string.digits
     # 去掉易混淆字符
     chars = chars.replace("O", "").replace("0", "").replace("I", "").replace("L", "")
-    return "".join(random.choices(chars, k=length))
+    return "".join(secrets.choice(chars) for _ in range(length))
 
 
 # ========= 管理员接口 =========
 
 
 class GenerateCodesBody(BaseModel):
+    max_uses: int = 1
     count: int = 1  # 生成数量
     days: int = 30  # 可兑换天数
     max_uses: int = 1  # 每个码最大使用次数
@@ -40,6 +42,27 @@ def generate_codes(body: GenerateCodesBody, _admin=Depends(verify_admin), db: Se
     if body.days < 1:
         raise HTTPException(status_code=400, detail="天数必须大于0")
 
+    if body.max_uses < 1:
+        raise HTTPException(status_code=400, detail="最大使用次数必须大于 0")
+    codes = []
+    for _ in range(body.count):
+        for attempt in range(10):
+            code_str = _generate_code()
+            try:
+                with db.begin_nested():
+                    db.add(RedeemCode(code=code_str, days=body.days, max_uses=body.max_uses))
+                    db.flush()
+            except IntegrityError:
+                if attempt == 9:
+                    db.rollback()
+                    raise HTTPException(status_code=503, detail="兑换码生成冲突，请重试")
+                continue
+            codes.append(code_str)
+            break
+    commit_or_conflict(db, "兑换码生成冲突，请重试")
+    return {"ok": True, "count": len(codes), "codes": codes}
+
+    # Legacy implementation retained below only to keep source-level compatibility.
     codes = []
     for _ in range(body.count):
         code_str = _generate_code()
@@ -114,7 +137,7 @@ class RedeemBody(BaseModel):
     code: str
 
 
-@router.post("/use")
+@router.post("/use", dependencies=[Depends(current_user)])
 def redeem_code(body: RedeemBody, request: Request, db: Session = Depends(get_db)):
     """用户兑换使用期限"""
     user_id = user_id_from_request(request)
@@ -161,7 +184,7 @@ def redeem_code(body: RedeemBody, request: Request, db: Session = Depends(get_db
     db.add(log)
     quota = reset_user_quota(db, user)
     quota.redeem_count = (quota.redeem_count or 0) + 1
-    db.commit()
+    commit_or_conflict(db, "该兑换码已兑换或状态已变化")
 
     return {
         "ok": True,

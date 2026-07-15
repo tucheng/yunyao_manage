@@ -28,3 +28,27 @@
 - 写接口会同时校验查询参数和 JSON 请求体中的用户 ID，必须与 Token 一致。
 - 管理接口只接受 Bearer JWT，不再接受 URL 查询参数令牌或静态 `ADMIN_TOKEN`。
 - `/users/profile` 仅本人返回账号字段、有效期和私有统计；查看他人时只返回公开资料。
+# Production hardening notes
+
+## Encryption key rotation
+
+Configure `ENCRYPTION_KEYS` as a JSON mapping of key IDs to Fernet keys and set
+`ENCRYPTION_ACTIVE_KEY_ID` to the key used for new writes. Keep every old key in
+the keyring while migrating. Run `python scripts/rotate_encryption_keys.py`
+first (dry run), then rerun with `--apply`. Remove an old key only after the dry
+run reports zero values. Versioned ciphertext uses `enc:v1:<key-id>:...`; an
+unknown key or failed authentication raises an error and is never returned as
+plaintext.
+
+## SMTP secret
+
+`smtp_password` is no longer read from or written to `app_settings`; migration
+0007 deletes any legacy row. Inject `SMTP_PASSWORD` from the cloud secret
+manager, or mount a secret file and set `SMTP_PASSWORD_FILE`. The administration
+API may display a mask but cannot replace the deployment-managed secret.
+
+## Distributed rate limits
+
+Set `REDIS_URL` and restrict `TRUSTED_PROXY_IPS` to the actual reverse-proxy
+network. Production fails closed with 503 if Redis is unavailable. Authentication,
+OCR, uploads, writes, administration, and reads use separate policies.

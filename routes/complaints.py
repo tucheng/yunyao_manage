@@ -5,11 +5,11 @@ from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
 from app_config import ADMIN_USER_IDS
-from auth_utils import get_current_user
+from auth_utils import current_user, get_current_user
 from database import get_db
 from models import Complaint, ComplaintReply as ComplaintReplyRecord, User
 
-router = APIRouter(prefix="/complaints", tags=["投诉建议"])
+router = APIRouter(prefix="/complaints", tags=["投诉建议"], dependencies=[Depends(current_user)])
 
 
 class ComplaintCreate(BaseModel):

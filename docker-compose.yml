@@ -1,6 +1,18 @@
 name: yunyao
 
 services:
+  redis:
+    image: redis:7.4.3-alpine
+    restart: unless-stopped
+    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
+    volumes:
+      - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 12
+
   db:
     image: mysql:8.4.10
     restart: unless-stopped
@@ -59,17 +71,52 @@ services:
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:?set S3_PUBLIC_BASE_URL}
       LOG_TO_FILE: "0"
-      FORWARDED_ALLOW_IPS: "*"
+      REDIS_URL: redis://redis:6379/0
+      FORWARDED_ALLOW_IPS: "172.16.0.0/12"
     depends_on:
-      db:
-        condition: service_healthy
+      migrate:
+        condition: service_completed_successfully
       minio-init:
         condition: service_completed_successfully
+      redis:
+        condition: service_healthy
     healthcheck:
       test: ["CMD", "python", "-B", "-c", "import requests; requests.get('http://127.0.0.1:8000/health/ready', timeout=5).raise_for_status()"]
       interval: 15s
       timeout: 8s
       retries: 8
+
+  migrate:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["/bin/sh", "-c"]
+    command: ["alembic upgrade head && python -B init_db.py"]
+    env_file:
+      - .env.prod
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+    depends_on:
+      db:
+        condition: service_healthy
+    restart: "no"
+
+  maintenance:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["python", "-B", "scripts/run_daily_maintenance.py"]
+    env_file:
+      - .env.prod
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    profiles: ["jobs"]
+    restart: "no"
 
   frontend:
     build:
@@ -93,3 +140,4 @@ services:
 volumes:
   mysql_data:
   minio_data:
+  redis_data:

@@ -8,7 +8,7 @@ from schemas import (
 )
 from security import encrypt, decrypt, hash_for_lookup
 from image_utils import normalize_image_url, parse_image_list, serialize_image_list
-from auth_utils import user_id_from_request
+from auth_utils import current_user, user_id_from_request
 from sqlalchemy import func
 from seger_calculator import calculate_seger
 from services.recipe_version import snapshot_recipe
@@ -23,7 +23,7 @@ router = APIRouter()
 
 from services.recipe_queries import *
 
-@router.get("/feed/following", response_model=list[RecipeListItem])
+@router.get("/feed/following", response_model=list[RecipeListItem], dependencies=[Depends(current_user)])
 def following_recipes(
     user_id: int = Query(...),
     page: int = 1,
@@ -95,7 +95,7 @@ def following_recipes(
 
 # ========= 我的 =========
 
-@router.get("/mine", response_model=list[RecipeListItem])
+@router.get("/mine", response_model=list[RecipeListItem], dependencies=[Depends(current_user)])
 def my_recipes(user_id: int = Query(...), db: Session = Depends(get_db)):
     recipes = (
         db.query(Recipe)
@@ -121,7 +121,7 @@ def my_recipes(user_id: int = Query(...), db: Session = Depends(get_db)):
 
 
 
-@router.get("/favorites")
+@router.get("/favorites", dependencies=[Depends(current_user)])
 def favorite_recipes(
     user_id: int = Query(...),
     page: int = 1,
@@ -193,4 +193,3 @@ def get_user(user_id: int, db: Session = Depends(get_db)):
         "trust_score": user.trust_score or 100,
         "avatar": user.avatar,
     }
-

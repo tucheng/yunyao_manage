@@ -6,10 +6,11 @@ import os
 import time
 from typing import Any
 
-from fastapi import HTTPException, Request
+from fastapi import Depends, HTTPException, Request
 from sqlalchemy.orm import Session
 
 from app_config import ACCESS_TOKEN_EXPIRE_SECONDS, ADMIN_USER_IDS, AUTH_SECRET
+from database import get_db
 from models import User
 
 PBKDF2_ITERATIONS = 260_000
@@ -125,6 +126,39 @@ def get_current_user(request: Request, db: Session) -> User:
     user = db.query(User).filter(User.id == user_id).first()
     if not user:
         raise HTTPException(status_code=401, detail="User not found")
+    return user
+
+
+async def current_user(request: Request, db: Session = Depends(get_db)) -> User:
+    """Require a signed user token and expose only its identity to handlers."""
+    user = get_current_user(request, db)
+    request.state.user_id = user.id
+    claimed_ids = []
+    for key in ("user_id", "current_user_id"):
+        value = request.query_params.get(key)
+        if value not in (None, "", "0", 0):
+            claimed_ids.append(value)
+    if "application/json" in request.headers.get("content-type", "").lower():
+        try:
+            body = await request.json()
+        except (json.JSONDecodeError, UnicodeDecodeError):
+            body = None
+        if isinstance(body, dict):
+            for key in ("user_id", "current_user_id"):
+                value = body.get(key)
+                if value not in (None, "", "0", 0):
+                    claimed_ids.append(value)
+    try:
+        if any(int(value) != user.id for value in claimed_ids):
+            raise HTTPException(status_code=403, detail="User id does not match token")
+    except (TypeError, ValueError):
+        raise HTTPException(status_code=400, detail="Invalid user id")
+    return user
+
+
+async def current_admin(user: User = Depends(current_user)) -> User:
+    if user_role(user) != "admin":
+        raise HTTPException(status_code=403, detail="Administrator required")
     return user
 
 

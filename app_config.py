@@ -52,6 +52,8 @@ ALLOW_DEV_CORS = os.getenv("ALLOW_DEV_CORS", "0") == "1"
 
 PERSONAL_DATA_ENCRYPTION_KEY = os.getenv("PERSONAL_DATA_ENCRYPTION_KEY", "").strip()
 RECIPE_ENCRYPT_KEY = os.getenv("RECIPE_ENCRYPT_KEY", "").strip()
+ENCRYPTION_KEYS = os.getenv("ENCRYPTION_KEYS", "").strip()
+ENCRYPTION_ACTIVE_KEY_ID = os.getenv("ENCRYPTION_ACTIVE_KEY_ID", "primary").strip()
 ENCRYPTION_KEY_FILE = os.getenv(
     "ENCRYPTION_KEY_FILE",
     os.path.join(os.path.dirname(__file__), ".encryption_key"),
@@ -93,6 +95,22 @@ BAIDU_OCR_API_URL = os.getenv(
     "https://aip.baidubce.com/rest/2.0/ocr/v1/general_basic",
 ).strip()
 
+REDIS_URL = os.getenv("REDIS_URL", "").strip()
+RATE_LIMIT_ENABLED = os.getenv("RATE_LIMIT_ENABLED", "1") == "1"
+TRUSTED_PROXY_IPS = _split_csv(os.getenv("TRUSTED_PROXY_IPS", ""))
+
+
+def _read_secret(name: str) -> str:
+    """Load a secret from NAME_FILE first, then NAME (Docker/K8s compatible)."""
+    path = os.getenv(f"{name}_FILE", "").strip()
+    if path:
+        with open(path, encoding="utf-8") as secret_file:
+            return secret_file.read().strip()
+    return os.getenv(name, "").strip()
+
+
+SMTP_PASSWORD = _read_secret("SMTP_PASSWORD")
+
 
 def validate_runtime_config() -> None:
     """Fail fast when an unsafe configuration is used in production."""
@@ -100,6 +118,8 @@ def validate_runtime_config() -> None:
         return
 
     errors: list[str] = []
+    if RATE_LIMIT_ENABLED and not REDIS_URL:
+        errors.append("生产环境启用应用限流时必须配置 REDIS_URL")
     weak_auth_secrets = {"", "dev-change-me", "change-me", "yunyao-prod-secret-change-me"}
     if AUTH_SECRET in weak_auth_secrets or len(AUTH_SECRET) < 32:
         errors.append("AUTH_SECRET 必须是至少 32 位的随机值")
@@ -120,9 +140,9 @@ def validate_runtime_config() -> None:
         errors.append("生产环境 S3_PUBLIC_BASE_URL 只允许 HTTPS 或站内相对路径")
 
     has_key_file = bool(ENCRYPTION_KEY_FILE and os.path.isfile(ENCRYPTION_KEY_FILE))
-    if not PERSONAL_DATA_ENCRYPTION_KEY and not has_key_file:
+    if not ENCRYPTION_KEYS and not PERSONAL_DATA_ENCRYPTION_KEY and not has_key_file:
         errors.append("必须配置 PERSONAL_DATA_ENCRYPTION_KEY 或挂载 ENCRYPTION_KEY_FILE")
-    if not RECIPE_ENCRYPT_KEY and not has_key_file:
+    if not ENCRYPTION_KEYS and not RECIPE_ENCRYPT_KEY and not has_key_file:
         errors.append("必须配置 RECIPE_ENCRYPT_KEY 或挂载 ENCRYPTION_KEY_FILE")
 
     if errors:

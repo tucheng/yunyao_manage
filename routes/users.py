@@ -1,7 +1,7 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Body, Request
 from typing import Optional
 from sqlalchemy.orm import Session
-from auth_utils import get_current_user
+from auth_utils import current_user, get_current_user
 from database import get_db
 from encryption_utils import encrypt, decrypt, hash_for_lookup
 from models import User, UserLevel, Recipe, Work, Follow, Favorite, FiringCurve, ToBeFired
@@ -82,7 +82,7 @@ def get_profile(request: Request, user_id: int = Query(...), db: Session = Depen
         })
     return result
 
-@router.get("/me")
+@router.get("/me", dependencies=[Depends(current_user)])
 def get_my_profile(request: Request, db: Session = Depends(get_db)):
     """获取当前登录用户的完整信息。"""
     user = get_current_user(request, db)
@@ -109,7 +109,7 @@ def get_my_profile(request: Request, db: Session = Depends(get_db)):
     }
 
 
-@router.put("/profile")
+@router.put("/profile", dependencies=[Depends(current_user)])
 def update_profile(
     request: Request,
     data: dict = Body({}),
@@ -184,7 +184,7 @@ def update_profile(
 # ========= 发布资格检查 =========
 
 
-@router.get("/publish-status")
+@router.get("/publish-status", dependencies=[Depends(current_user)])
 def get_publish_status(user_id: Optional[int] = Query(None), db: Session = Depends(get_db)):
     """获取当前用户的发布资格状态。user_id 为空时返回默认等级的配额"""
     from datetime import datetime
@@ -229,7 +229,7 @@ def get_publish_status(user_id: Optional[int] = Query(None), db: Session = Depen
 # ========= 配方查看权限 =========
 
 
-@router.get("/view-status")
+@router.get("/view-status", dependencies=[Depends(current_user)])
 def get_view_status(
     user_id: int = Query(...),
     recipe_id: Optional[int] = Query(default=None),
@@ -279,7 +279,7 @@ def get_view_status(
 # ========= 待烧（ToBeFired） =========
 
 
-@router.get("/to-be-fired")
+@router.get("/to-be-fired", dependencies=[Depends(current_user)])
 def list_to_be_fired(
     user_id: int = Query(...),
     page: int = 1,
@@ -320,7 +320,7 @@ def list_to_be_fired(
     }
 
 
-@router.post("/to-be-fired")
+@router.post("/to-be-fired", dependencies=[Depends(current_user)])
 def add_to_be_fired(
     user_id: int = Query(...),
     data: dict = Body(...),
@@ -354,7 +354,7 @@ def add_to_be_fired(
     return {"message": "已加入待烧", "id": item.id}
 
 
-@router.delete("/to-be-fired/{item_id}")
+@router.delete("/to-be-fired/{item_id}", dependencies=[Depends(current_user)])
 def remove_to_be_fired(
     item_id: int,
     user_id: int = Query(...),
@@ -372,7 +372,7 @@ def remove_to_be_fired(
     return {"message": "已移除"}
 
 
-@router.put("/to-be-fired/{item_id}")
+@router.put("/to-be-fired/{item_id}", dependencies=[Depends(current_user)])
 def update_to_be_fired(
     item_id: int,
     user_id: int = Query(...),

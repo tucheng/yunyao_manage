@@ -8,7 +8,8 @@ import time
 from fastapi import FastAPI, HTTPException, Request, Depends
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.middleware.gzip import GZipMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, JSONResponse
+from sqlalchemy.exc import IntegrityError
 from fastapi.staticfiles import StaticFiles
 from starlette.responses import Response
 from starlette.types import Receive, Scope, Send
@@ -26,8 +27,6 @@ from app_config import (
     LOG_TO_FILE,
     MAX_PAGE_SIZE,
 )
-from auth_utils import user_id_from_request
-from image_utils import normalize_image_url, parse_image_list
 from rate_limiter import RateLimiter
 from routes import (
     admin,
@@ -59,46 +58,9 @@ app = FastAPI(
 )
 
 
-@app.on_event("startup")
-def startup_downgrade():
-    """启动时补跑日切维护，并在每天 0 点刷新等级与额度。"""
-    from database import SessionLocal
-    from services.user_quota import business_today, ensure_system_levels, run_daily_maintenance
-
-    # 启动时执行一次
-    try:
-        db = SessionLocal()
-        ensure_system_levels(db)
-        downgraded, refreshed = run_daily_maintenance(db)
-        db.close()
-        logger.info(f"[每日维护] 启动补跑完成：降级 {downgraded} 人，刷新额度 {refreshed} 人")
-    except Exception as e:
-        logger.error(f"[过期降级] 启动时执行失败: {e}")
-
-    # 每晚 0 点执行
-    import threading
-
-    def _nightly_check():
-        last_maintenance_date = business_today()
-        while True:
-            # Do not depend on the host/container timezone. Polling also
-            # catches clock jumps and a process suspended across midnight.
-            time.sleep(30)
-            current_date = business_today()
-            if current_date == last_maintenance_date:
-                continue
-            try:
-                db = SessionLocal()
-                downgraded, refreshed = run_daily_maintenance(db)
-                db.close()
-                last_maintenance_date = current_date
-                logger.info(f"[每日维护] 降级 {downgraded} 人，刷新额度 {refreshed} 人")
-            except Exception as e:
-                logger.error(f"[过期降级] 定时执行失败: {e}")
-
-    t = threading.Thread(target=_nightly_check, daemon=True)
-    t.start()
-    logger.info("[每日维护] 定时任务已启动，每晚 0:00 执行")
+@app.exception_handler(IntegrityError)
+async def database_conflict_handler(_request: Request, _exc: IntegrityError):
+    return JSONResponse(status_code=409, content={"detail": "数据冲突，请刷新后重试"})
 
 
 # ===== 日志配置：容器默认输出 stdout，本地可按天滚动文件 =====
@@ -129,7 +91,7 @@ app.add_middleware(
     allow_origins=CORS_ORIGINS or (["*"] if ALLOW_DEV_CORS else []),
     allow_credentials=False,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Authorization", "Content-Type", "X-User-Id"],
+    allow_headers=["Authorization", "Content-Type"],
 )
 
 
@@ -159,10 +121,15 @@ async def log_requests(request: Request, call_next):
 
 @app.middleware("http")
 async def rate_limit_middleware(request: Request, call_next):
-    resp = _rate_limiter.check(request)
+    resp = await _rate_limiter.check(request)
     if resp:
         return resp
     return await call_next(request)
+
+
+@app.on_event("shutdown")
+async def close_shared_clients():
+    await _rate_limiter.close()
 
 
 @app.middleware("http")
@@ -193,95 +160,6 @@ async def cap_page_size(request: Request, call_next):
         except (ValueError, TypeError):
             pass
     return await call_next(request)
-
-
-def _requires_auth(request: Request) -> bool:
-    path = request.url.path
-    method = request.method
-    if path in ("/auth/login", "/auth/register", "/auth/send-code", "/auth/captcha", "/auth/find-user", "/auth/verify-code", "/auth/reset-password"):
-        return False
-    if path.startswith(("/admin", "/admin-panel", "/docs", "/openapi.json", "/uploads")):
-        return False
-    if path == "/users/publish-status":
-        return bool(request.query_params.get("user_id"))
-    if path == "/users/view-status":
-        return True
-    if path.startswith(('/materials', '/settings', '/users', '/social', '/notifications', '/complaints', '/upload', '/curves')):
-        # curves: GET 查询公开
-        if path.startswith('/curves') and method == 'GET':
-            return False
-        # materials: GET 列表公开（POST/PUT/DELETE 需登录）
-        if path.startswith("/materials/body") and method == "GET":
-            return False
-        if path.startswith("/materials/catalog") and method == "GET":
-            return False
-        # substitutions 查询公开
-        if path.endswith("/substitutions") and method == "GET":
-            return False
-        return True
-    if path.startswith("/recipes"):
-        public_get = method == "GET" and (
-            path in ("/recipes", "/recipes/")
-            or path.startswith(("/recipes/search", "/recipes/by-no/"))
-            or path.count("/") == 2
-        )
-        return not public_get
-    if path.startswith("/works"):
-        public_get = method == "GET" and (
-            path in ("/works", "/works/", "/works/search/config")
-            or path.count("/") == 2
-        )
-        return not public_get
-    return method not in ("GET", "HEAD", "OPTIONS")
-
-
-@app.middleware("http")
-async def require_signed_user_token(request: Request, call_next):
-    if request.method == "OPTIONS" or not _requires_auth(request):
-        return await call_next(request)
-
-    try:
-        token_user_id = user_id_from_request(request)
-        if token_user_id is None:
-            raise HTTPException(status_code=401, detail="Authentication required")
-
-        claimed_ids: list[int] = []
-        for key in ("user_id", "current_user_id"):
-            if request.method == "GET" and request.url.path == "/users/profile" and key == "user_id":
-                continue
-            value = request.query_params.get(key)
-            if value:
-                claimed_ids.append(int(value))
-
-        content_type = request.headers.get("content-type", "").lower()
-        if request.method in ("POST", "PUT", "PATCH", "DELETE") and "application/json" in content_type:
-            try:
-                body = await request.json()
-            except (json.JSONDecodeError, UnicodeDecodeError):
-                body = None
-            if isinstance(body, dict):
-                for key in ("user_id", "current_user_id"):
-                    value = body.get(key)
-                    if value not in (None, "", 0, "0"):
-                        claimed_ids.append(int(value))
-
-        if any(claimed_id != token_user_id for claimed_id in claimed_ids):
-            raise HTTPException(status_code=403, detail="User id does not match token")
-
-        request.state.user_id = token_user_id
-        return await call_next(request)
-    except HTTPException as exc:
-        return Response(
-            json.dumps({"detail": exc.detail}, ensure_ascii=False),
-            status_code=exc.status_code,
-            media_type="application/json",
-        )
-    except ValueError:
-        return Response(
-            json.dumps({"detail": "Invalid user id"}, ensure_ascii=False),
-            status_code=400,
-            media_type="application/json",
-        )
 
 
 app.include_router(recipe_ingredients.router)
@@ -329,97 +207,6 @@ os.makedirs(uploads_dir, exist_ok=True)
 app.mount("/uploads", StaticFiles(directory=uploads_dir), name="uploads")
 
 
-# ===== 统一收藏列表（配方 + 作品）=====
-from sqlalchemy.orm import Session
-from database import get_db
-from models import Favorite, Recipe, Work, User
-from sqlalchemy import func
-
-
-@app.get("/api/favorites")
-def get_all_favorites(
-    user_id: int,
-    page: int = 1,
-    page_size: int = 20,
-    db: Session = Depends(get_db),
-):
-    offset = (page - 1) * page_size
-
-    # 配方收藏
-    recipe_favs = (
-        db.query(Favorite, Recipe, User)
-        .join(Recipe, Favorite.recipe_id == Recipe.id)
-        .join(User, Recipe.user_id == User.id)
-        .filter(Favorite.user_id == user_id, Favorite.recipe_id.isnot(None))
-        .order_by(Favorite.created_at.desc())
-        .offset(offset)
-        .limit(page_size)
-        .all()
-    )
-    recipe_total = (
-        db.query(func.count(Favorite.id))
-        .filter(Favorite.user_id == user_id, Favorite.recipe_id.isnot(None))
-        .scalar()
-        or 0
-    )
-
-    # 作品收藏
-    work_favs = (
-        db.query(Favorite, Work, User)
-        .join(Work, Favorite.work_id == Work.id)
-        .join(User, Work.user_id == User.id)
-        .filter(Favorite.user_id == user_id, Favorite.work_id.isnot(None))
-        .order_by(Favorite.created_at.desc())
-        .offset(offset)
-        .limit(page_size)
-        .all()
-    )
-    work_total = (
-        db.query(func.count(Favorite.id))
-        .filter(Favorite.user_id == user_id, Favorite.work_id.isnot(None))
-        .scalar()
-        or 0
-    )
-
-    # 合并排序（按收藏时间）
-    items = []
-    for fav, recipe, user in recipe_favs:
-        items.append({
-            "type": "recipe",
-            "id": recipe.id,
-            "title": recipe.title or "",
-            "recipe_no": recipe.recipe_no or "",
-            "author_name": user.nickname or user.username or "未知",
-            "author_id": user.id,
-            "cover": normalize_image_url(recipe.cover),
-            "category": recipe.category or "",
-            "favorited_at": fav.created_at.isoformat() if fav.created_at else "",
-        })
-    for fav, work, user in work_favs:
-        items.append({
-            "type": "work",
-            "id": work.id,
-            "title": work.description or "烧制作品",
-            "author_name": user.nickname or user.username or "未知",
-            "author_id": user.id,
-            "cover": (parse_image_list(work.images) or [normalize_image_url(work.image)])[0],
-            "category": work.body_material or "",
-            "favorited_at": fav.created_at.isoformat() if fav.created_at else "",
-        })
-
-    # 按收藏时间排序
-    items.sort(key=lambda x: x.get("favorited_at", ""), reverse=True)
-
-    total = recipe_total + work_total
-    return {
-        "items": items[:page_size],
-        "total": total,
-        "page": page,
-        "page_size": page_size,
-        "has_more": (offset + page_size) < total,
-    }
-
-
 @app.get("/")
 def root():
     return {"status": "running"}
@@ -431,7 +218,7 @@ def health_live():
 
 
 @app.get("/health/ready", include_in_schema=False)
-def health_ready():
+async def health_ready():
     from sqlalchemy import text
     from database import engine
     from storage import storage_healthcheck
@@ -440,6 +227,7 @@ def health_ready():
         with engine.connect() as conn:
             conn.execute(text("SELECT 1"))
         storage_healthcheck()
+        await _rate_limiter.healthcheck()
     except Exception as exc:
         logger.error("readiness check failed: %s", exc)
         raise HTTPException(status_code=503, detail="service not ready") from exc

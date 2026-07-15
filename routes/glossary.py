@@ -3,6 +3,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
 from sqlalchemy import or_
 from database import get_db
+from auth_utils import current_admin
 from models import GlossaryTerm
 
 router = APIRouter(prefix="/glossary", tags=["附属-术语表"])
@@ -53,7 +54,7 @@ def get_term(term_id: int, db: Session = Depends(get_db)):
     }
 
 
-@router.post("")
+@router.post("", dependencies=[Depends(current_admin)])
 def create_term(data: dict, db: Session = Depends(get_db)):
     term = GlossaryTerm(
         term=data["term"],
@@ -67,7 +68,7 @@ def create_term(data: dict, db: Session = Depends(get_db)):
     return {"id": term.id, "message": "创建成功"}
 
 
-@router.put("/{term_id}")
+@router.put("/{term_id}", dependencies=[Depends(current_admin)])
 def update_term(term_id: int, data: dict, db: Session = Depends(get_db)):
     term = db.query(GlossaryTerm).filter(GlossaryTerm.id == term_id).first()
     if not term:
@@ -84,7 +85,7 @@ def update_term(term_id: int, data: dict, db: Session = Depends(get_db)):
     return {"message": "更新成功"}
 
 
-@router.delete("/{term_id}")
+@router.delete("/{term_id}", dependencies=[Depends(current_admin)])
 def delete_term(term_id: int, db: Session = Depends(get_db)):
     term = db.query(GlossaryTerm).filter(GlossaryTerm.id == term_id).first()
     if not term:

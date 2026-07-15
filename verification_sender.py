@@ -5,7 +5,7 @@ from email.mime.text import MIMEText
 import requests
 from sqlalchemy.orm import Session
 
-from app_config import IS_PRODUCTION
+from app_config import IS_PRODUCTION, SMTP_PASSWORD
 from models import AppSetting
 
 
@@ -15,7 +15,6 @@ DEFAULT_SETTINGS = {
     "smtp_host": "",
     "smtp_port": "465",
     "smtp_username": "",
-    "smtp_password": "",
     "smtp_from": "",
     "smtp_use_ssl": "1",
     "email_subject": "云窑验证码",
@@ -33,7 +32,10 @@ def get_settings(db: Session, mask_sensitive: bool = False) -> dict[str, str]:
     settings = DEFAULT_SETTINGS.copy()
     rows = db.query(AppSetting).all()
     for row in rows:
+        if row.key == "smtp_password":
+            continue
         settings[row.key] = row.value or ""
+    settings["smtp_password"] = SMTP_PASSWORD
     if mask_sensitive:
         for key in SENSITIVE_KEYS:
             if settings.get(key):
@@ -47,8 +49,8 @@ def save_settings(db: Session, values: dict[str, str]) -> dict[str, str]:
     for key, value in values.items():
         if key not in allowed:
             continue
-        if key in SENSITIVE_KEYS and value == "********":
-            value = current.get(key, "")
+        if key in SENSITIVE_KEYS:
+            continue
         row = db.query(AppSetting).filter(AppSetting.key == key).first()
         if not row:
             row = AppSetting(key=key, value=str(value or ""))

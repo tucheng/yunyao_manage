@@ -18,7 +18,7 @@ def _load_key() -> bytes:
         return f.read().strip().encode()
 
 
-_cipher = Fernet(_load_key())
+_cipher = None  # legacy implementation disabled; canonical functions are imported below
 
 
 def encrypt(plaintext: str) -> str:
@@ -40,3 +40,7 @@ def hash_for_lookup(value: str) -> str:
     if not value:
         return ""
     return hashlib.sha256(value.strip().lower().encode()).hexdigest()
+
+
+# Compatibility shim for old imports. The implementation lives only in security.py.
+from security import decrypt, encrypt, hash_for_lookup  # noqa: E402,F811

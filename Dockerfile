@@ -9,8 +9,8 @@ WORKDIR /app
 
 RUN groupadd --system app && useradd --system --gid app --home /app app
 
-COPY requirements.txt ./
-RUN pip install --requirement requirements.txt
+COPY requirements.txt requirements.lock ./
+RUN pip install --requirement requirements.lock
 
 COPY . .
 RUN chmod +x /app/deploy/entrypoint.sh \

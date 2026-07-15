@@ -2,7 +2,7 @@ from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy import text, func
 from sqlalchemy.orm import Session
 from database import get_db
-from auth_utils import user_id_from_request
+from auth_utils import current_user, user_id_from_request
 from models import RecipeIngredient, Recipe, IngredientName, Material, User
 from schemas import RecipeIngredientOut
 from security import encrypt, decrypt, hash_for_lookup
@@ -11,7 +11,7 @@ import logging
 
 logger = logging.getLogger('yunyao')
 
-router = APIRouter(prefix="/recipe-ingredients", tags=["配方配料"])
+router = APIRouter(prefix="/recipe-ingredients", tags=["配方配料"], dependencies=[Depends(current_user)])
 
 
 @router.get("/{recipe_id}", response_model=list[RecipeIngredientOut])
