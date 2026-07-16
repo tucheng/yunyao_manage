@@ -315,6 +315,35 @@ class ResetPasswordRequest(BaseModel):
     confirm_password: str = ""
 
 
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+    confirm_password: str = ""
+
+
+@router.post("/change-password")
+def change_password(
+    body: ChangePasswordRequest,
+    user: User = Depends(current_user),
+    db: Session = Depends(get_db),
+):
+    """当前登录用户使用旧密码修改密码，并撤销已有登录令牌。"""
+    old_password_valid, _ = verify_password(body.old_password, user.password or "")
+    if not old_password_valid:
+        raise HTTPException(status_code=400, detail="旧密码错误")
+    if not body.new_password or len(body.new_password) < 6 or len(body.new_password) > 20:
+        raise HTTPException(status_code=400, detail="新密码长度为6-20位")
+    if body.new_password == body.old_password:
+        raise HTTPException(status_code=400, detail="新密码不能与旧密码相同")
+    if body.new_password != body.confirm_password:
+        raise HTTPException(status_code=400, detail="两次输入的新密码不一致")
+
+    user.password = hash_password(body.new_password)
+    user.token_version = (user.token_version or 0) + 1
+    db.commit()
+    return {"message": "密码修改成功"}
+
+
 @router.post("/reset-password")
 def reset_password(body: ResetPasswordRequest, db: Session = Depends(get_db)):
     email = body.email.strip().lower()

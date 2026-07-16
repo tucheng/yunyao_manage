@@ -73,6 +73,11 @@
 重置密码
 - **请求体**: `{ email, verification_code, password, confirm_password }`
 
+### POST `/auth/change-password`
+当前登录用户修改密码，需要 Bearer Token
+- **请求体**: `{ old_password, new_password, confirm_password }`
+- **成功后**: 撤销已有登录令牌，需要使用新密码重新登录
+
 ---
 
 ## 2. 用户模块 (users)
