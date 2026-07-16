@@ -19,6 +19,7 @@ EXPECTED_ROUTES = {
     ("GET", "/recipes/search", "search"),
     ("GET", "/recipes/by-no/{recipe_no}", "get_recipe_by_no"),
     ("GET", "/recipes/{recipe_id}", "get_recipe"),
+    ("GET", "/recipes/{recipe_id}/link-preview", "get_recipe_link_preview"),
     ("GET", "/recipes/{recipe_id}/seger", "get_recipe_seger"),
     ("GET", "/recipes/{recipe_id}/versions", "list_recipe_versions"),
     ("GET", "/recipes/{recipe_id}/versions/{version_id}", "get_recipe_version_detail"),

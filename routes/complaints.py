@@ -1,18 +1,20 @@
 from datetime import datetime
 from urllib.parse import urlsplit
 
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from fastapi import APIRouter, Depends, HTTPException, Query, Request, Response
 from pydantic import BaseModel
 from sqlalchemy.orm import Session
 
-from app_config import ADMIN_USER_IDS, S3_PUBLIC_BASE_URL
+from app_config import ADMIN_USER_IDS
 from auth_utils import current_user, get_current_user
 from database import get_db
 from models import Complaint, ComplaintReply as ComplaintReplyRecord, User
 from image_utils import parse_image_list
 from routes.notifications import add_notification
+from storage import is_private_reference, private_object_url, read_private_object
 
 router = APIRouter(prefix="/complaints", tags=["投诉建议"], dependencies=[Depends(current_user)])
+media_router = APIRouter(tags=["投诉附件"])
 
 
 def _sanitize_complaint_images(value: str) -> str:
@@ -20,15 +22,23 @@ def _sanitize_complaint_images(value: str) -> str:
     if len(images) > 5:
         raise HTTPException(status_code=400, detail="最多上传5张图片")
     allowed = []
-    s3_base = S3_PUBLIC_BASE_URL.rstrip("/")
     for image in images:
         parsed = urlsplit(image)
-        is_local = not parsed.scheme and image.startswith(("/uploads/", "/media/"))
-        is_s3 = bool(s3_base and image.startswith(s3_base + "/"))
-        if not is_local and not is_s3:
-            raise HTTPException(status_code=400, detail="投诉图片必须来自本站上传服务")
+        if parsed.scheme != "private" or not is_private_reference(image) or not image.startswith("private://complaints/"):
+            raise HTTPException(status_code=400, detail="投诉图片必须通过投诉附件上传服务提交")
         allowed.append(image)
     return ",".join(allowed)
+
+
+@media_router.get("/complaint-media/{key:path}", include_in_schema=False)
+def complaint_media(key: str, expires: int, signature: str):
+    try:
+        content, content_type = read_private_object(key, expires, signature)
+    except PermissionError as exc:
+        raise HTTPException(status_code=403, detail="附件链接无效或已过期") from exc
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="附件不存在") from exc
+    return Response(content, media_type=content_type, headers={"Cache-Control": "private, no-store"})
 
 
 class ComplaintCreate(BaseModel):
@@ -83,7 +93,10 @@ def serialize_complaint(item: Complaint, db: Session, include_user: bool = False
         "id": item.id,
         "user_id": item.user_id,
         "content": item.content,
-        "images": item.images or "",
+        "images": ",".join(
+            private_object_url(image) if is_private_reference(image) else image
+            for image in parse_image_list(item.images or "")
+        ),
         "status": item.status or "open",
         "reply": item.reply or "",
         "replies": replies,

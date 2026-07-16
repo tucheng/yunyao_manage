@@ -8,6 +8,7 @@ venv/
 .encryption_key
 logs/
 uploads/
+private_uploads/
 wheels/
 *.log
 login_resp.json

@@ -1,5 +1,33 @@
 # 可复现部署
 
+## 首次生产上线顺序
+
+1. 从 `.env.prod.example` 创建 `.env.prod`，填写域名、数据库密码、随机 `AUTH_SECRET`、加密密钥、公开/私有两个对象桶和邮件服务器。生产环境不再允许 `debug` 验证码通道。
+2. 在仓库外创建两个仅部署用户可读的文件（Linux 建议 `chmod 600`）：`SMTP_PASSWORD_SECRET_FILE` 只写 SMTP 密码；`INITIAL_ADMIN_PASSWORD_SECRET_FILE` 只写首次管理员密码，且至少 12 位。
+3. 校验配置并初始化空库：
+
+   ```bash
+   docker compose --env-file .env.prod config
+   docker compose --env-file .env.prod up --build migrate minio-init
+   ```
+
+4. 创建一次性管理员。重复执行会轮换密码并撤销旧令牌：
+
+   ```bash
+   docker compose --env-file .env.prod --profile tools run --rm bootstrap-admin
+   ```
+
+5. 启动应用和备份：
+
+   ```bash
+   docker compose --env-file .env.prod up -d --build
+   docker compose --env-file .env.prod --profile backups up -d mysql-backup object-backup
+   ```
+
+6. 验证健康检查、管理员登录、邮件验证码、注册、公开图片上传和投诉附件。投诉附件保存在 `S3_PRIVATE_BUCKET`，只通过短时签名地址读取；不得给该桶配置匿名访问。
+
+备份必须再复制到异机或云存储，同机 Docker volume 不算灾备。
+
 ## 固定运行时
 
 - 后端：Python 3.12.13

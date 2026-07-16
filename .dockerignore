@@ -9,6 +9,7 @@ __pycache__
 venv
 logs
 uploads
+private_uploads
 wheels
 login_resp.json
 Python314Libsite-packages

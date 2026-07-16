@@ -1,5 +1,11 @@
 name: yunyao
 
+secrets:
+  smtp_password:
+    file: ${SMTP_PASSWORD_SECRET_FILE:?set SMTP_PASSWORD_SECRET_FILE}
+  initial_admin_password:
+    file: ${INITIAL_ADMIN_PASSWORD_SECRET_FILE:?set INITIAL_ADMIN_PASSWORD_SECRET_FILE}
+
 services:
   redis:
     image: redis:7.4.3-alpine
@@ -78,12 +84,16 @@ services:
       - >-
         until mc alias set local http://minio:9000 "$${S3_ACCESS_KEY_ID}" "$${S3_SECRET_ACCESS_KEY}"; do sleep 2; done &&
         mc mb --ignore-existing "local/$${S3_BUCKET}" &&
+        mc mb --ignore-existing "local/$${S3_PRIVATE_BUCKET}" &&
         mc version enable "local/$${S3_BUCKET}" &&
-        mc anonymous set download "local/$${S3_BUCKET}"
+        mc version enable "local/$${S3_PRIVATE_BUCKET}" &&
+        mc anonymous set download "local/$${S3_BUCKET}" &&
+        mc anonymous set none "local/$${S3_PRIVATE_BUCKET}"
     environment:
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY}
       S3_BUCKET: ${S3_BUCKET:-yunyao-uploads}
+      S3_PRIVATE_BUCKET: ${S3_PRIVATE_BUCKET:-yunyao-private}
     restart: "no"
 
   api:
@@ -106,9 +116,12 @@ services:
       STORAGE_BACKEND: s3
       S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:?set S3_PUBLIC_BASE_URL}
+      S3_PRIVATE_BUCKET: ${S3_PRIVATE_BUCKET:?set S3_PRIVATE_BUCKET}
       LOG_TO_FILE: "0"
       REDIS_URL: redis://redis:6379/0
       FORWARDED_ALLOW_IPS: "172.16.0.0/12"
+    secrets:
+      - smtp_password
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -139,6 +152,8 @@ services:
     environment:
       APP_ENV: production
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+    secrets:
+      - smtp_password
     depends_on:
       db:
         condition: service_healthy
@@ -160,6 +175,8 @@ services:
     environment:
       APP_ENV: production
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+    secrets:
+      - smtp_password
     depends_on:
       migrate:
         condition: service_completed_successfully
@@ -200,7 +217,7 @@ services:
       S3_ENDPOINT_URL: http://minio:9000
       S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID}
       S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY}
-      S3_BUCKET: ${S3_BUCKET:-yunyao-uploads}
+      S3_BUCKETS: ${S3_BUCKET:-yunyao-uploads} ${S3_PRIVATE_BUCKET:-yunyao-private}
       BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
       BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
     volumes:
@@ -217,6 +234,27 @@ services:
     tmpfs:
       - /tmp:rw,noexec,nosuid,size=64m
       - /root/.mc:rw,noexec,nosuid,size=16m
+
+  bootstrap-admin:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    entrypoint: ["python", "-B", "scripts/bootstrap_admin.py"]
+    env_file:
+      - .env.prod
+    environment:
+      APP_ENV: production
+      DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
+      INITIAL_ADMIN_USERNAME: ${INITIAL_ADMIN_USERNAME:?set INITIAL_ADMIN_USERNAME}
+      INITIAL_ADMIN_PASSWORD_FILE: /run/secrets/initial_admin_password
+    secrets:
+      - smtp_password
+      - initial_admin_password
+    depends_on:
+      migrate:
+        condition: service_completed_successfully
+    profiles: ["tools"]
+    restart: "no"
 
   frontend:
     image: ${FRONTEND_IMAGE:-yunyao-frontend:local}

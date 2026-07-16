@@ -83,6 +83,7 @@ LOCAL_UPLOAD_DIR = os.getenv(
 S3_ENDPOINT_URL = os.getenv("S3_ENDPOINT_URL", "").strip()
 S3_REGION = os.getenv("S3_REGION", "us-east-1").strip()
 S3_BUCKET = os.getenv("S3_BUCKET", "").strip()
+S3_PRIVATE_BUCKET = os.getenv("S3_PRIVATE_BUCKET", "").strip()
 S3_ACCESS_KEY_ID = os.getenv("S3_ACCESS_KEY_ID", "").strip()
 S3_SECRET_ACCESS_KEY = os.getenv("S3_SECRET_ACCESS_KEY", "").strip()
 S3_PUBLIC_BASE_URL = os.getenv("S3_PUBLIC_BASE_URL", "").strip().rstrip("/")
@@ -114,6 +115,13 @@ def _read_secret(name: str) -> str:
 
 SMTP_PASSWORD = _read_secret("SMTP_PASSWORD")
 
+VERIFICATION_CHANNEL = os.getenv("VERIFICATION_CHANNEL", "debug").strip().lower()
+SMTP_HOST = os.getenv("SMTP_HOST", "").strip()
+SMTP_PORT = os.getenv("SMTP_PORT", "465").strip()
+SMTP_USERNAME = os.getenv("SMTP_USERNAME", "").strip()
+SMTP_FROM = os.getenv("SMTP_FROM", "").strip()
+SMTP_USE_SSL = os.getenv("SMTP_USE_SSL", "1").strip()
+
 
 def validate_runtime_config() -> None:
     """Fail fast when an unsafe configuration is used in production."""
@@ -137,10 +145,16 @@ def validate_runtime_config() -> None:
         errors.append("生产环境 CORS_ORIGINS 只允许 HTTPS 来源")
     if STORAGE_BACKEND != "s3":
         errors.append("生产环境 STORAGE_BACKEND 必须使用 s3")
-    if not all((S3_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_PUBLIC_BASE_URL)):
+    if not all((S3_BUCKET, S3_PRIVATE_BUCKET, S3_ACCESS_KEY_ID, S3_SECRET_ACCESS_KEY, S3_PUBLIC_BASE_URL)):
         errors.append("生产环境必须完整配置 S3 对象存储")
     if S3_PUBLIC_BASE_URL.startswith("http://"):
         errors.append("生产环境 S3_PUBLIC_BASE_URL 只允许 HTTPS 或站内相对路径")
+    if S3_PRIVATE_BUCKET == S3_BUCKET:
+        errors.append("S3_PRIVATE_BUCKET 必须与公开图片桶分离")
+    if VERIFICATION_CHANNEL not in {"email", "sms"}:
+        errors.append("生产环境 VERIFICATION_CHANNEL 必须是 email 或 sms")
+    if VERIFICATION_CHANNEL == "email" and not all((SMTP_HOST, SMTP_USERNAME, SMTP_FROM, SMTP_PASSWORD)):
+        errors.append("邮件验证码必须完整配置 SMTP_HOST/SMTP_USERNAME/SMTP_FROM/SMTP_PASSWORD_FILE")
 
     has_key_file = bool(ENCRYPTION_KEY_FILE and os.path.isfile(ENCRYPTION_KEY_FILE))
     if not ENCRYPTION_KEYS and not PERSONAL_DATA_ENCRYPTION_KEY and not has_key_file:

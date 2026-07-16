@@ -12,6 +12,15 @@ sys.path.insert(0, os.path.dirname(__file__))
 
 from database import SessionLocal
 from models import WorkAttributeOption, AppSetting
+from services.user_quota import ensure_system_levels
+from app_config import (
+    SMTP_FROM,
+    SMTP_HOST,
+    SMTP_PORT,
+    SMTP_USERNAME,
+    SMTP_USE_SSL,
+    VERIFICATION_CHANNEL,
+)
 from sqlalchemy import text
 
 # ===== 预置数据 =====
@@ -39,6 +48,19 @@ DEFAULT_VERIFICATION_SETTINGS = {
     "sms_headers_json": "{}",
     "sms_body_template": '{"phone":"{{phone}}","code":"{{code}}"}',
 }
+
+
+def initial_verification_settings() -> dict[str, str]:
+    settings = dict(DEFAULT_VERIFICATION_SETTINGS)
+    settings.update({
+        "verification_channel": VERIFICATION_CHANNEL,
+        "smtp_host": SMTP_HOST,
+        "smtp_port": SMTP_PORT,
+        "smtp_username": SMTP_USERNAME,
+        "smtp_from": SMTP_FROM,
+        "smtp_use_ssl": SMTP_USE_SSL,
+    })
+    return settings
 
 DEFAULT_TEMPERATURE_RANGES = [
     {"value": "low", "label": "低温", "min": 0, "max": 1150, "description": "0~1150℃"},
@@ -78,7 +100,7 @@ def init_verification_settings(db) -> int:
     if count > 0:
         return 0
     import json
-    setting = AppSetting(key="verification_settings", value=json.dumps(DEFAULT_VERIFICATION_SETTINGS, ensure_ascii=False))
+    setting = AppSetting(key="verification_settings", value=json.dumps(initial_verification_settings(), ensure_ascii=False))
     db.add(setting)
     db.commit()
     return 1
@@ -102,6 +124,9 @@ def main():
     db = SessionLocal()
     try:
         results = []
+        ensure_system_levels(db)
+        db.commit()
+        results.append("系统用户等级: 已初始化")
         n = init_work_attributes(db)
         if n:
             results.append(f"作品属性选项: {n} 条")

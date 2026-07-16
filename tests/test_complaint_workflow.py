@@ -13,9 +13,11 @@ from routes.complaints import _sanitize_complaint_images, serialize_complaint
 class ComplaintWorkflowTests(unittest.TestCase):
     def test_only_uploaded_complaint_images_are_accepted(self):
         self.assertEqual(
-            _sanitize_complaint_images("/uploads/misc/a.png,/uploads/misc/b.jpg"),
-            "/uploads/misc/a.png,/uploads/misc/b.jpg",
+            _sanitize_complaint_images("private://complaints/a.png,private://complaints/b.jpg"),
+            "private://complaints/a.png,private://complaints/b.jpg",
         )
+        with self.assertRaises(HTTPException):
+            _sanitize_complaint_images("/media/yunyao-uploads/misc/a.png")
         with self.assertRaises(HTTPException):
             _sanitize_complaint_images("javascript:alert(1)\" onerror=\"alert(1)")
 
