@@ -1,28 +1,23 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session, joinedload
-from database import get_db
-from models import AppSetting, Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion, FiringCurve
-from schemas import (
-    RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
-    ReviewCreate, ReviewOut,
-)
-from security import encrypt, decrypt, hash_for_lookup
-from image_utils import normalize_image_url, parse_image_list, serialize_image_list
-from auth_utils import current_user, user_id_from_request
-from sqlalchemy import func
-from seger_calculator import calculate_seger
-from services.recipe_version import snapshot_recipe
-from color_names import color_name_in_range, get_color_range_config
 import json
 import logging
-from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from auth_utils import current_user
+from database import get_db
+from image_utils import normalize_image_url, parse_image_list, serialize_image_list
+from models import FiringCurve, Recipe, User, Work
+from schemas import RecipeCreate, RecipeOut, RecipeUpdate
+from seger_calculator import calculate_seger
+from services.recipe_access import require_recipe_owner
+from services.recipe_number import generate_recipe_no
+from services.recipe_version import snapshot_recipe
 
 logger = logging.getLogger('yunyao')
 
 router = APIRouter(dependencies=[Depends(current_user)])
-
-from services.recipe_number import generate_recipe_no
-
 
 def _owned_curve_id(db: Session, curve_id: int | None, user_id: int) -> int | None:
     if not curve_id:
@@ -120,8 +115,12 @@ def update_recipe(
     db_recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not db_recipe:
         raise HTTPException(status_code=404, detail="不存在")
-    if db_recipe.user_id != user_id:
-        raise HTTPException(status_code=403, detail="无权修改")
+    require_recipe_owner(
+        db_recipe,
+        user_id,
+        forbidden_status=403,
+        forbidden_detail="无权修改",
+    )
 
     # 快照当前状态
     snapshot_recipe(recipe_id, db, note="编辑配方信息", user_id=user_id)
@@ -180,8 +179,12 @@ def delete_recipe(recipe_id: int, user_id: int = Query(...), db: Session = Depen
     db_recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
     if not db_recipe:
         raise HTTPException(status_code=404, detail="不存在")
-    if db_recipe.user_id != user_id:
-        raise HTTPException(status_code=403, detail="无权删除")
+    require_recipe_owner(
+        db_recipe,
+        user_id,
+        forbidden_status=403,
+        forbidden_detail="无权删除",
+    )
     db.delete(db_recipe)
     db.commit()
     return {"message": "已删除"}

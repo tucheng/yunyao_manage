@@ -1,22 +1,13 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session, joinedload
-from database import get_db
-from models import AppSetting, Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion
-from schemas import (
-    RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
-    ReviewCreate, ReviewOut,
-)
-from security import encrypt, decrypt, hash_for_lookup
-from image_utils import normalize_image_url, parse_image_list, serialize_image_list
-from auth_utils import current_user, user_id_from_request
-from sqlalchemy import func
-from seger_calculator import calculate_seger
-from services.recipe_version import snapshot_recipe
-from services.recipe_access import require_recipe_reader
-from color_names import color_name_in_range, get_color_range_config
-import json
 import logging
-from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query, Request
+from sqlalchemy.orm import Session
+
+from auth_utils import current_user
+from database import get_db
+from models import Favorite, Like, Recipe, RecipeView, User
+from services.recipe_access import require_recipe_reader
+from routes.notifications import add_notification
 
 logger = logging.getLogger('yunyao')
 
@@ -37,7 +28,7 @@ def _accessible_recipe(db: Session, recipe_id: int, request: Request) -> Recipe:
 
 @router.post("/{recipe_id}/favorite")
 def toggle_favorite(recipe_id: int, request: Request, user_id: int = Query(...), db: Session = Depends(get_db)):
-    _accessible_recipe(db, recipe_id, request)
+    recipe = _accessible_recipe(db, recipe_id, request)
     existing = db.query(Favorite).filter(
         Favorite.recipe_id == recipe_id,
         Favorite.user_id == user_id,
@@ -49,6 +40,12 @@ def toggle_favorite(recipe_id: int, request: Request, user_id: int = Query(...),
     fav = Favorite(recipe_id=recipe_id, user_id=user_id)
     db.add(fav)
     db.commit()
+    actor = db.query(User).filter(User.id == user_id).first()
+    actor_name = (actor.nickname or actor.username) if actor else f"用户{user_id}"
+    add_notification(
+        db, user_id=recipe.user_id, from_user_id=user_id, type="favorite",
+        recipe_id=recipe_id, content=f"{actor_name} 收藏了你的配方",
+    )
     return {"favorited": True}
 
 
@@ -68,6 +65,12 @@ def toggle_recipe_like(recipe_id: int, request: Request, user_id: int = Query(..
     db.add(like)
     recipe.likes = (recipe.likes or 0) + 1
     db.commit()
+    actor = db.query(User).filter(User.id == user_id).first()
+    actor_name = (actor.nickname or actor.username) if actor else f"用户{user_id}"
+    add_notification(
+        db, user_id=recipe.user_id, from_user_id=user_id, type="like",
+        recipe_id=recipe_id, content=f"{actor_name} 点赞了你的配方",
+    )
     return {"liked": True, "likes": recipe.likes}
 
 

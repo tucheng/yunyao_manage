@@ -10,6 +10,7 @@ from auth_utils import current_user, get_current_user
 from database import get_db
 from models import Complaint, ComplaintReply as ComplaintReplyRecord, User
 from image_utils import parse_image_list
+from routes.notifications import add_notification
 
 router = APIRouter(prefix="/complaints", tags=["投诉建议"], dependencies=[Depends(current_user)])
 
@@ -195,4 +196,8 @@ def reply_complaint(
     item.replied_at = datetime.utcnow()
     db.commit()
     db.refresh(item)
+    add_notification(
+        db, user_id=item.user_id, from_user_id=admin.id, type="complaint_reply",
+        complaint_id=item.id, content=f"你的投诉建议 #{item.id} 收到了回复",
+    )
     return serialize_complaint(item, db)

@@ -1,27 +1,25 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session, joinedload
-from database import get_db
-from models import AppSetting, Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion
-from schemas import (
-    RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
-    ReviewCreate, ReviewOut,
-)
-from security import encrypt, decrypt, hash_for_lookup
-from image_utils import normalize_image_url, parse_image_list, serialize_image_list
-from auth_utils import user_id_from_request
-from sqlalchemy import func
-from seger_calculator import calculate_seger
-from services.recipe_version import snapshot_recipe
-from color_names import color_name_in_range, get_color_range_config
-import json
 import logging
-from datetime import datetime
+
+from fastapi import APIRouter, Depends
+from sqlalchemy.orm import Session
+
+from database import get_db
+from models import IngredientName, Recipe, Review, User
+from schemas import RecipeListItem
+from services.recipe_queries import (
+    _distinct_public_recipe_values,
+    _get_color_ranges,
+    _public_recipe_query,
+    _recipe_has_color_range,
+    _recipe_matches_search_filters,
+    _recipe_rows_with_work_counts,
+    _serialize_recipe_list_item,
+)
+from services.recipe_serializers import search_review_payload
 
 logger = logging.getLogger('yunyao')
 
 router = APIRouter()
-
-from services.recipe_queries import *
 
 @router.get("/search/config")
 def recipe_search_config(db: Session = Depends(get_db)):
@@ -294,22 +292,9 @@ def search(
     for r in reviews:
         user = db.query(User).filter(User.id == r.user_id).first()
         recipe = db.query(Recipe).filter(Recipe.id == r.recipe_id).first()
-        review_list.append({
-            "id": r.id,
-            "recipe_id": r.recipe_id,
-            "user_id": r.user_id,
-            "image": r.image,
-            "content": r.content or "",
-            "body_material": r.body_material or "",
-            "kiln_type": r.kiln_type or "",
-            "temperature": r.temperature or "",
-            "recipe_title": recipe.title if recipe else "",
-            "nickname": user.nickname if user else f"用户{r.user_id}",
-            "created_at": r.created_at,
-        })
+        review_list.append(search_review_payload(r, user, recipe))
 
     return {
         "recipes": recipe_list,
         "works": review_list,
     }
-

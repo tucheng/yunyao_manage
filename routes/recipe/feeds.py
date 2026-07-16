@@ -1,27 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session, joinedload
-from database import get_db
-from models import AppSetting, Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion
-from schemas import (
-    RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
-    ReviewCreate, ReviewOut,
-)
-from security import encrypt, decrypt, hash_for_lookup
-from image_utils import normalize_image_url, parse_image_list, serialize_image_list
-from auth_utils import current_user, user_id_from_request
-from sqlalchemy import func, or_
-from seger_calculator import calculate_seger
-from services.recipe_version import snapshot_recipe
-from color_names import color_name_in_range, get_color_range_config
-import json
 import logging
-from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Query
+from sqlalchemy import func, or_
+from sqlalchemy.orm import Session
+
+from auth_utils import current_user
+from database import get_db
+from models import Favorite, Recipe, User, Work
+from schemas import RecipeListItem
+from services.recipe_queries import _first_work_image
+from services.recipe_serializers import favorite_recipe_payload, favorite_work_payload
 
 logger = logging.getLogger('yunyao')
 
 router = APIRouter()
-
-from services.recipe_queries import *
 
 @router.get("/feed/following", response_model=list[RecipeListItem], dependencies=[Depends(current_user)])
 def following_recipes(
@@ -156,32 +148,13 @@ def favorite_recipes(
             recipe = db.query(Recipe).filter(Recipe.id == rid).first()
             if recipe and (recipe.visibility in ("public", "showoff") or recipe.user_id == user_id):
                 user = db.query(User).filter(User.id == recipe.user_id).first()
-                result.append({
-                    "id": recipe.id,
-                    "user_id": recipe.user_id,
-                    "type": "recipe",
-                    "title": recipe.title,
-                    "recipe_no": recipe.recipe_no or '',
-                    "category": recipe.category or '',
-                    "cover": normalize_image_url(recipe.cover) or (parse_image_list(recipe.images) or [""])[0],
-                    "author_name": user.nickname if user else '',
-                    "created_at": recipe.created_at.isoformat() if recipe.created_at else '',
-                })
+                result.append(favorite_recipe_payload(recipe, user))
         if f.work_id:
             wid = f.work_id
             work = db.query(Work).filter(Work.id == wid).first()
             if work:
                 user = db.query(User).filter(User.id == work.user_id).first()
-                result.append({
-                    "id": work.id,
-                    "user_id": work.user_id,
-                    "type": "work",
-                    "title": (work.description or '作品').split('\n')[0][:30],
-                    "cover": normalize_image_url(work.image),
-                    "author_name": user.nickname if user else '',
-                    "body_material": work.body_material or '',
-                    "created_at": work.created_at.isoformat() if work.created_at else '',
-                })
+                result.append(favorite_work_payload(work, user))
     result.sort(key=lambda x: x.get("created_at", ""), reverse=True)
     return {
         "items": result,

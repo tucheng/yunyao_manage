@@ -1,8 +1,8 @@
-"""Frozen schema baseline for new Yunyao databases.
+"""static_schema_snapshot_temp
 
-Revision ID: 0001_initial_schema
-Revises:
-Create Date: 2026-07-15 22:12:25.835473
+Revision ID: af56c4dc8c47
+Revises: 0010_expand_ingredient_amount
+Create Date: 2026-07-15 22:06:50.573833
 """
 from typing import Sequence, Union
 
@@ -10,8 +10,8 @@ from alembic import op
 import sqlalchemy as sa
 
 
-revision: str = '0001_initial_schema'
-down_revision: Union[str, None] = None
+revision: str = 'af56c4dc8c47'
+down_revision: Union[str, None] = '0010_expand_ingredient_amount'
 branch_labels: Union[str, Sequence[str], None] = None
 depends_on: Union[str, Sequence[str], None] = None
 
@@ -21,7 +21,7 @@ def upgrade() -> None:
     op.create_table('app_settings',
     sa.Column('key', sa.String(length=100), nullable=False),
     sa.Column('value', sa.Text(), nullable=True),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.PrimaryKeyConstraint('key')
     )
     op.create_table('glossary_terms',
@@ -30,7 +30,7 @@ def upgrade() -> None:
     sa.Column('definition', sa.Text(), nullable=False),
     sa.Column('category', sa.String(length=50), nullable=True),
     sa.Column('sort_order', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_glossary_terms_id'), 'glossary_terms', ['id'], unique=False)
@@ -56,7 +56,7 @@ def upgrade() -> None:
     sa.Column('temp_150c', sa.Integer(), nullable=True),
     sa.Column('temp_270f', sa.Integer(), nullable=True),
     sa.Column('sort_order', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_temperature_cones_cone_no'), 'temperature_cones', ['cone_no'], unique=False)
@@ -69,7 +69,7 @@ def upgrade() -> None:
     sa.Column('max_views', sa.Integer(), nullable=True, comment='每日可查看配方上限，0=禁止查看'),
     sa.Column('description', sa.String(length=200), nullable=True),
     sa.Column('sort_order', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_user_levels_id'), 'user_levels', ['id'], unique=False)
@@ -78,7 +78,7 @@ def upgrade() -> None:
     sa.Column('category', sa.String(length=30), nullable=False),
     sa.Column('value', sa.String(length=50), nullable=False),
     sa.Column('sort_order', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.PrimaryKeyConstraint('id')
     )
     op.create_index(op.f('ix_work_attribute_options_category'), 'work_attribute_options', ['category'], unique=False)
@@ -103,7 +103,7 @@ def upgrade() -> None:
     sa.Column('is_admin', sa.Boolean(), nullable=True),
     sa.Column('token_version', sa.Integer(), server_default=sa.text('0'), nullable=False),
     sa.Column('expires_at', sa.DateTime(timezone=True), server_default=sa.text("'2027-07-09 00:00:00'"), nullable=False, comment='使用期限'),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['level_id'], ['user_levels.id'], ondelete='RESTRICT'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('email'),
@@ -127,7 +127,7 @@ def upgrade() -> None:
     sa.Column('is_closed', sa.Boolean(), nullable=False),
     sa.Column('closed_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('closed_by', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['admin_id'], ['users.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['closed_by'], ['users.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
@@ -144,7 +144,7 @@ def upgrade() -> None:
     sa.Column('segments', sa.Text(), nullable=True),
     sa.Column('description', sa.Text(), nullable=True),
     sa.Column('sort_order', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -154,7 +154,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('follower_id', sa.Integer(), nullable=False),
     sa.Column('followed_id', sa.Integer(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.CheckConstraint('follower_id <> followed_id', name='ck_follow_not_self'),
     sa.ForeignKeyConstraint(['followed_id'], ['users.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['follower_id'], ['users.id'], ondelete='CASCADE'),
@@ -197,7 +197,7 @@ def upgrade() -> None:
     sa.Column('thermal_expansion', sa.Float(), nullable=True),
     sa.Column('category', sa.String(length=50), nullable=True),
     sa.Column('sort_order', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
     )
@@ -212,7 +212,7 @@ def upgrade() -> None:
     sa.Column('current_uses', sa.Integer(), nullable=True, comment='已使用次数'),
     sa.Column('is_active', sa.Boolean(), nullable=True),
     sa.Column('created_by', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.CheckConstraint('current_uses >= 0 AND current_uses <= max_uses', name='ck_redeem_use_count'),
     sa.CheckConstraint('days > 0', name='ck_redeem_days_positive'),
     sa.CheckConstraint('max_uses > 0', name='ck_redeem_max_uses_positive'),
@@ -228,8 +228,8 @@ def upgrade() -> None:
     sa.Column('work_remaining', sa.Integer(), nullable=False),
     sa.Column('recipe_view_remaining', sa.Integer(), nullable=False),
     sa.Column('redeem_count', sa.Integer(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('user_id')
     )
@@ -239,7 +239,7 @@ def upgrade() -> None:
     sa.Column('complaint_id', sa.Integer(), nullable=False),
     sa.Column('admin_id', sa.Integer(), nullable=False),
     sa.Column('content', sa.Text(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['admin_id'], ['users.id'], ondelete='RESTRICT'),
     sa.ForeignKeyConstraint(['complaint_id'], ['complaints.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
@@ -253,8 +253,8 @@ def upgrade() -> None:
     sa.Column('similarity_score', sa.Float(), nullable=True, comment='成分相似度 0-100'),
     sa.Column('status', sa.String(length=20), nullable=True, comment='历史兼容字段，不再参与业务逻辑'),
     sa.Column('note', sa.String(length=500), nullable=True, comment='相似关系备注'),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.CheckConstraint('similarity_score >= 0 AND similarity_score <= 100', name='ck_material_similarity_range'),
     sa.CheckConstraint('source_material_id <> target_material_id', name='ck_material_substitution_not_self'),
     sa.ForeignKeyConstraint(['source_material_id'], ['materials.id'], ondelete='CASCADE'),
@@ -263,8 +263,6 @@ def upgrade() -> None:
     sa.UniqueConstraint('source_material_id', 'target_material_id', name='uq_material_substitution_pair')
     )
     op.create_index(op.f('ix_material_substitutions_id'), 'material_substitutions', ['id'], unique=False)
-    op.create_index('ix_src_mat', 'material_substitutions', ['source_material_id'], unique=False)
-    op.create_index('ix_tgt_mat', 'material_substitutions', ['target_material_id'], unique=False)
     op.create_table('recipes',
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
@@ -282,7 +280,7 @@ def upgrade() -> None:
     sa.Column('visibility', sa.String(length=20), nullable=True),
     sa.Column('likes', sa.Integer(), nullable=True),
     sa.Column('work_count', sa.Integer(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.Column('updated_at', sa.DateTime(timezone=True), nullable=True),
     sa.Column('forked_from', sa.Integer(), nullable=True),
     sa.Column('source', sa.String(length=20), nullable=True),
@@ -304,7 +302,7 @@ def upgrade() -> None:
     sa.Column('days_added', sa.Integer(), nullable=False),
     sa.Column('before_expiry', sa.DateTime(timezone=True), nullable=True, comment='兑换前使用期限'),
     sa.Column('after_expiry', sa.DateTime(timezone=True), nullable=True, comment='兑换后使用期限'),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.CheckConstraint('days_added > 0', name='ck_redeem_log_days_positive'),
     sa.ForeignKeyConstraint(['code_id'], ['redeem_codes.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
@@ -321,8 +319,8 @@ def upgrade() -> None:
     sa.Column('temperatures', sa.Text(), nullable=True),
     sa.Column('firing_curve_id', sa.Integer(), nullable=True),
     sa.Column('body_material', sa.String(length=50), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['firing_curve_id'], ['firing_curves.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('user_id')
@@ -356,7 +354,7 @@ def upgrade() -> None:
     sa.Column('acid_base_note', sa.String(length=500), nullable=True),
     sa.Column('seger_detail', sa.Text(), nullable=True),
     sa.Column('calculated_at', sa.DateTime(timezone=True), nullable=True),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['recipe_id'], ['recipes.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
     sa.UniqueConstraint('recipe_id')
@@ -371,7 +369,7 @@ def upgrade() -> None:
     sa.Column('seger_data', sa.Text(), nullable=True),
     sa.Column('note', sa.String(length=200), nullable=True),
     sa.Column('created_by', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.CheckConstraint('version_no > 0', name='ck_recipe_version_positive'),
     sa.ForeignKeyConstraint(['created_by'], ['users.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['recipe_id'], ['recipes.id'], ondelete='CASCADE'),
@@ -384,7 +382,7 @@ def upgrade() -> None:
     sa.Column('id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('recipe_id', sa.Integer(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['recipe_id'], ['recipes.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
@@ -396,8 +394,8 @@ def upgrade() -> None:
     sa.Column('recipe_id', sa.Integer(), nullable=True),
     sa.Column('note', sa.String(length=200), nullable=True),
     sa.Column('status', sa.String(length=20), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
-    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
+    sa.Column('updated_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['recipe_id'], ['recipes.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id')
@@ -410,7 +408,7 @@ def upgrade() -> None:
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('recipe_id', sa.Integer(), nullable=False),
     sa.Column('view_date', sa.Date(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['recipe_id'], ['recipes.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.PrimaryKeyConstraint('id'),
@@ -437,7 +435,7 @@ def upgrade() -> None:
     sa.Column('surface', sa.String(length=20), nullable=True),
     sa.Column('transparency', sa.String(length=20), nullable=True),
     sa.Column('curve_id', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['curve_id'], ['firing_curves.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['recipe_id'], ['recipes.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
@@ -449,7 +447,7 @@ def upgrade() -> None:
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('recipe_id', sa.Integer(), nullable=True),
     sa.Column('work_id', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.CheckConstraint('(recipe_id IS NULL) <> (work_id IS NULL)', name='ck_favorite_one_target'),
     sa.ForeignKeyConstraint(['recipe_id'], ['recipes.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
@@ -464,7 +462,7 @@ def upgrade() -> None:
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('recipe_id', sa.Integer(), nullable=True),
     sa.Column('work_id', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.CheckConstraint('(recipe_id IS NULL) <> (work_id IS NULL)', name='ck_like_one_target'),
     sa.ForeignKeyConstraint(['recipe_id'], ['recipes.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
@@ -481,7 +479,7 @@ def upgrade() -> None:
     sa.Column('content', sa.Text(), nullable=False),
     sa.Column('recipe_id', sa.Integer(), nullable=True),
     sa.Column('work_id', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.Column('is_read', sa.Boolean(), nullable=True),
     sa.ForeignKeyConstraint(['receiver_id'], ['users.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['recipe_id'], ['recipes.id'], ondelete='SET NULL'),
@@ -498,7 +496,7 @@ def upgrade() -> None:
     sa.Column('work_id', sa.Integer(), nullable=True),
     sa.Column('content', sa.Text(), nullable=True),
     sa.Column('is_read', sa.Boolean(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['from_user_id'], ['users.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['work_id'], ['works.id'], ondelete='CASCADE'),
@@ -519,7 +517,7 @@ def upgrade() -> None:
     sa.Column('kiln_type', sa.String(length=30), nullable=True),
     sa.Column('kiln_type_other', sa.String(length=50), nullable=True),
     sa.Column('temperature', sa.String(length=30), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['parent_id'], ['reviews.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['recipe_id'], ['recipes.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
@@ -536,7 +534,7 @@ def upgrade() -> None:
     sa.Column('from_recipe_id', sa.Integer(), nullable=True),
     sa.Column('work_id', sa.Integer(), nullable=True),
     sa.Column('sort_order', sa.Integer(), nullable=True),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['from_recipe_id'], ['recipes.id'], ondelete='SET NULL'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['work_id'], ['works.id'], ondelete='SET NULL'),
@@ -549,7 +547,7 @@ def upgrade() -> None:
     sa.Column('work_id', sa.Integer(), nullable=False),
     sa.Column('user_id', sa.Integer(), nullable=False),
     sa.Column('content', sa.Text(), nullable=False),
-    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('now()'), nullable=True),
+    sa.Column('created_at', sa.DateTime(timezone=True), server_default=sa.text('(CURRENT_TIMESTAMP)'), nullable=True),
     sa.ForeignKeyConstraint(['parent_id'], ['work_comments.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['user_id'], ['users.id'], ondelete='CASCADE'),
     sa.ForeignKeyConstraint(['work_id'], ['works.id'], ondelete='CASCADE'),
@@ -560,25 +558,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # MySQL automatically removes a table's indexes and foreign keys.  The
-    # autogenerated index-by-index downgrade is invalid when an index backs a
-    # foreign key, so drop tables directly in reverse dependency order.
-    if op.get_bind().dialect.name == 'mysql':
-        for table_name in (
-            'work_comments', 'user_materials', 'reviews', 'notifications',
-            'messages', 'likes', 'favorites', 'works',
-            'user_daily_recipe_views', 'to_be_fired', 'recipe_views',
-            'recipe_versions', 'recipe_seger', 'recipe_ingredients',
-            'user_settings', 'redeem_logs', 'recipes',
-            'material_substitutions', 'complaint_replies',
-            'user_usage_quotas', 'redeem_codes', 'materials', 'follows',
-            'firing_curves', 'complaints', 'users',
-            'work_attribute_options', 'user_levels', 'temperature_cones',
-            'recipe_sequences', 'ingredient_names', 'glossary_terms',
-            'app_settings',
-        ):
-            op.drop_table(table_name)
-        return
     # ### commands auto generated by Alembic - please adjust! ###
     op.drop_index(op.f('ix_work_comments_id'), table_name='work_comments')
     op.drop_table('work_comments')
@@ -625,8 +604,6 @@ def downgrade() -> None:
     op.drop_index(op.f('ix_recipes_recipe_no'), table_name='recipes')
     op.drop_index(op.f('ix_recipes_id'), table_name='recipes')
     op.drop_table('recipes')
-    op.drop_index('ix_tgt_mat', table_name='material_substitutions')
-    op.drop_index('ix_src_mat', table_name='material_substitutions')
     op.drop_index(op.f('ix_material_substitutions_id'), table_name='material_substitutions')
     op.drop_table('material_substitutions')
     op.drop_index(op.f('ix_complaint_replies_id'), table_name='complaint_replies')

@@ -1,4 +1,4 @@
-from sqlalchemy import Column, Integer, String, Text, Float, Date, DateTime, ForeignKey, Boolean, UniqueConstraint, CheckConstraint, text
+from sqlalchemy import Column, Integer, String, Text, Float, Date, DateTime, ForeignKey, Boolean, UniqueConstraint, CheckConstraint, Index, text
 from sqlalchemy.orm import relationship
 from sqlalchemy.sql import func
 from database import Base
@@ -398,6 +398,8 @@ class MaterialSubstitution(Base):
         UniqueConstraint("source_material_id", "target_material_id", name="uq_material_substitution_pair"),
         CheckConstraint("source_material_id <> target_material_id", name="ck_material_substitution_not_self"),
         CheckConstraint("similarity_score >= 0 AND similarity_score <= 100", name="ck_material_similarity_range"),
+        Index("ix_src_mat", "source_material_id"),
+        Index("ix_tgt_mat", "target_material_id"),
     )
 
     id = Column(Integer, primary_key=True, index=True)
@@ -477,8 +479,10 @@ class Notification(Base):
     id = Column(Integer, primary_key=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
     from_user_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    type = Column(String(32), nullable=False)  # comment / follow / like / favorite
+    type = Column(String(32), nullable=False)  # comment / follow / like / favorite / complaint_reply
     work_id = Column(Integer, ForeignKey("works.id", ondelete="CASCADE"), nullable=True)
+    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=True)
+    complaint_id = Column(Integer, ForeignKey("complaints.id", ondelete="CASCADE"), nullable=True)
     content = Column(Text, default="")
     is_read = Column(Boolean, default=False)
     created_at = Column(DateTime(timezone=True), server_default=func.now())
@@ -503,6 +507,7 @@ class UserSettings(Base):
     temperatures = Column(Text, default="[]")     # JSON: ["1220℃","1280℃"]
     firing_curve_id = Column(Integer, ForeignKey("firing_curves.id", ondelete="SET NULL"), nullable=True)
     body_material = Column(String(50), default="")
+    notification_preferences = Column(Text, default="{}")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 

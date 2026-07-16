@@ -1,5 +1,3 @@
-import math
-import re
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -12,180 +10,20 @@ from services.material_similarity import (
     TOP_SIMILAR_MATERIALS,
     material_similarity,
 )
+from services.material_catalog import (
+    catalog_payload as _catalog_payload,
+    clean_molecule_data as _clean_molecule_data,
+    material_name_conflict as _material_name_conflict,
+    request_user_id as _request_user_id,
+)
+from services.user_materials import (
+    find_user_material as _find_user_material,
+    next_order as _next_order,
+    put_material_in_status as _put_material_in_status,
+)
 
 router = APIRouter(prefix="/materials", tags=["材料库"])
 
-MOLECULE_FLOAT_FIELDS = (
-    "sio2", "al2o3", "fe2o3", "tio2", "cao", "mgo", "na2o", "k2o",
-    "zno", "b2o3", "p2o5", "li2o", "mno2", "coo", "sno2", "cuo",
-    "cr2o3", "pbo", "bao", "sro", "loi", "thermal_expansion",
-)
-MOLECULE_TEXT_FIELDS = ("name_en", "formula", "molecular_weight", "category")
-
-
-def _next_order(db: Session, user_id: int, status: str) -> int:
-    max_order = db.query(func.max(UserMaterial.sort_order)).filter(
-        UserMaterial.user_id == user_id,
-        UserMaterial.status == status,
-    ).scalar() or 0
-    return max_order + 1
-
-
-def _find_user_material(db: Session, user_id: int, name: str):
-    return db.query(UserMaterial).filter(
-        UserMaterial.user_id == user_id,
-        UserMaterial.name == name,
-    ).first()
-
-
-def _dedupe_user_materials(db: Session, user_id: int):
-    items = db.query(UserMaterial).filter(
-        UserMaterial.user_id == user_id,
-    ).order_by(UserMaterial.id).all()
-
-    seen = {}
-    changed = False
-    for item in items:
-        key = item.name.strip().lower()
-        if not key:
-            db.delete(item)
-            changed = True
-            continue
-        existing = seen.get(key)
-        if not existing:
-            seen[key] = item
-            continue
-
-        existing.status = item.status
-        existing.sort_order = item.sort_order
-        existing.category = item.category or existing.category
-        existing.from_recipe_id = item.from_recipe_id or existing.from_recipe_id
-        db.delete(item)
-        changed = True
-
-    if changed:
-        db.commit()
-
-
-def _put_material_in_status(db: Session, user_id: int, name: str, status: str, data: Optional[dict] = None):
-    data = data or {}
-    existing = _find_user_material(db, user_id, name)
-    if existing:
-        if existing.status == status:
-            return existing, False
-        existing.status = status
-        existing.sort_order = _next_order(db, user_id, status)
-        if "category" in data:
-            existing.category = data["category"]
-        return existing, True
-    item = UserMaterial(
-        user_id=user_id, name=name, status=status,
-        sort_order=_next_order(db, user_id, status),
-        category=data.get("category", ""),
-        from_recipe_id=data.get("from_recipe_id"),
-    )
-    db.add(item)
-    return item, True
-
-
-def _catalog_payload(material: Material) -> dict:
-    return {
-        "id": material.id,
-        "name": material.name,
-        "name_en": material.name_en or "",
-        "source": material.source or "",
-        "source_id": material.source_id,
-        "formula": material.formula or "",
-        "molecular_weight": material.molecular_weight or "",
-        "category": material.category or "",
-        "is_analysis": bool(material.is_analysis),
-        "is_primitive": bool(material.is_primitive),
-        "sio2": material.sio2,
-        "al2o3": material.al2o3,
-        "fe2o3": material.fe2o3,
-        "tio2": material.tio2,
-        "cao": material.cao,
-        "mgo": material.mgo,
-        "na2o": material.na2o,
-        "k2o": material.k2o,
-        "zno": material.zno,
-        "b2o3": material.b2o3,
-        "p2o5": material.p2o5,
-        "li2o": material.li2o,
-        "mno2": material.mno2,
-        "coo": material.coo,
-        "sno2": material.sno2,
-        "cuo": material.cuo,
-        "cr2o3": material.cr2o3,
-        "pbo": material.pbo,
-        "bao": material.bao,
-        "sro": material.sro,
-        "loi": material.loi,
-        "thermal_expansion": material.thermal_expansion,
-    }
-
-
-def _request_user_id(request: Request) -> int:
-    user_id = getattr(request.state, "user_id", None)
-    if not user_id:
-        raise HTTPException(status_code=401, detail="请先登录")
-    return user_id
-
-
-def _normalized_material_name(name: str) -> str:
-    """Compare material names after removing every Unicode whitespace character."""
-    return re.sub(r"\s+", "", str(name or ""))
-
-
-def _material_name_conflict(db: Session, name: str, exclude_id: int | None = None) -> Material | None:
-    normalized = _normalized_material_name(name)
-    if not normalized:
-        return None
-    query = db.query(Material)
-    if exclude_id is not None:
-        query = query.filter(Material.id != exclude_id)
-    for material in query.all():
-        if _normalized_material_name(material.name) == normalized:
-            return material
-    return None
-
-
-def _clean_molecule_data(data: dict, *, partial: bool = False) -> dict:
-    cleaned = {}
-    if not partial or "name" in data:
-        name = str(data.get("name", "")).strip()
-        if not _normalized_material_name(name):
-            raise HTTPException(status_code=400, detail="材料名不能为空")
-        if len(name) > 200:
-            raise HTTPException(status_code=400, detail="材料名不能超过200个字符")
-        cleaned["name"] = name
-
-    max_lengths = {"name_en": 200, "formula": 200, "molecular_weight": 50, "category": 50}
-    for field in MOLECULE_TEXT_FIELDS:
-        if field not in data:
-            continue
-        value = str(data.get(field) or "").strip()
-        if len(value) > max_lengths[field]:
-            raise HTTPException(status_code=400, detail=f"{field}内容过长")
-        cleaned[field] = value
-
-    for field in MOLECULE_FLOAT_FIELDS:
-        if field not in data:
-            continue
-        raw = data.get(field)
-        if raw in (None, ""):
-            cleaned[field] = None
-            continue
-        try:
-            value = float(raw)
-        except (TypeError, ValueError):
-            raise HTTPException(status_code=400, detail=f"{field}必须是数字")
-        if not math.isfinite(value):
-            raise HTTPException(status_code=400, detail=f"{field}必须是有效数字")
-        if field != "thermal_expansion" and not 0 <= value <= 100:
-            raise HTTPException(status_code=400, detail=f"{field}必须在0到100之间")
-        cleaned[field] = value
-    return cleaned
 
 
 @router.get("/molecules", dependencies=[Depends(current_user)])

@@ -27,8 +27,14 @@ def require_recipe_reader(
     return user
 
 
-def require_recipe_owner(recipe: Recipe, user_id: int | None) -> None:
+def require_recipe_owner(
+    recipe: Recipe,
+    user_id: int | None,
+    *,
+    forbidden_status: int = 404,
+    forbidden_detail: str = "配方不存在",
+) -> None:
     if not user_id:
         raise HTTPException(status_code=401, detail="请先登录")
     if recipe.user_id != user_id:
-        raise HTTPException(status_code=404, detail="配方不存在")
+        raise HTTPException(status_code=forbidden_status, detail=forbidden_detail)

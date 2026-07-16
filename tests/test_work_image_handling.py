@@ -3,9 +3,12 @@ import unittest
 from fastapi import HTTPException
 from sqlalchemy import create_engine
 from sqlalchemy.orm import sessionmaker
+from starlette.requests import Request
 
+from auth_utils import create_access_token
 from database import Base
-from models import Recipe, User, UserLevel, Work
+from models import Recipe, User, UserLevel, UserUsageQuota, Work
+from routes.recipe.detail import get_recipe_link_preview
 from routes.works import _sanitize_work_images, _set_work_recipe
 
 
@@ -55,7 +58,7 @@ class WorkRecipeLinkTests(unittest.TestCase):
         self.engine = create_engine("sqlite:///:memory:")
         Base.metadata.create_all(self.engine)
         self.db = sessionmaker(bind=self.engine)()
-        self.db.add(UserLevel(id=2, name="普通用户", max_recipes=10, max_works=10, max_views=10))
+        self.db.add(UserLevel(id=2, name="普通用户", max_recipes=10, max_works=10, max_views=0))
         self.owner = User(username="recipe-owner", password="", level_id=2)
         self.viewer = User(username="work-owner", password="", level_id=2)
         self.db.add_all([self.owner, self.viewer])
@@ -76,6 +79,9 @@ class WorkRecipeLinkTests(unittest.TestCase):
         _set_work_recipe(self.db, self.work, self.public_recipe.id, self.viewer.id)
         self.assertEqual(self.work.recipe_id, self.public_recipe.id)
         self.assertEqual(self.public_recipe.work_count, 1)
+        self.assertIsNone(
+            self.db.query(UserUsageQuota).filter_by(user_id=self.viewer.id).first()
+        )
 
         _set_work_recipe(self.db, self.work, self.second_recipe.id, self.viewer.id)
         self.assertEqual(self.public_recipe.work_count, 0)
@@ -89,6 +95,22 @@ class WorkRecipeLinkTests(unittest.TestCase):
         with self.assertRaises(HTTPException) as caught:
             _set_work_recipe(self.db, self.work, self.private_recipe.id, self.viewer.id)
         self.assertEqual(caught.exception.status_code, 404)
+
+    def test_link_preview_omits_details_and_does_not_consume_view_quota(self):
+        token = create_access_token(self.viewer)
+        request = Request({
+            "type": "http",
+            "headers": [(b"authorization", f"Bearer {token}".encode())],
+        })
+
+        preview = get_recipe_link_preview(self.public_recipe.id, request, self.db)
+
+        self.assertEqual(preview["id"], self.public_recipe.id)
+        self.assertNotIn("ingredients", preview)
+        self.assertNotIn("describe", preview)
+        self.assertIsNone(
+            self.db.query(UserUsageQuota).filter_by(user_id=self.viewer.id).first()
+        )
 
 
 if __name__ == "__main__":

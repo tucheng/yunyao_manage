@@ -1,51 +1,33 @@
-import json
 from datetime import datetime, time
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, exists, func, or_
 from database import get_db
-from models import AppSetting, Complaint, ComplaintReply, User, UserLevel, Recipe, Work, Notification, WorkAttributeOption, Material, MaterialSubstitution
+from models import Complaint, ComplaintReply, User, UserLevel, Recipe, Work, WorkAttributeOption, Material, MaterialSubstitution
 from pydantic import BaseModel
 from typing import Optional
 from app_config import ADMIN_USER_IDS
-from auth_utils import decode_access_token, hash_password, token_from_request, verify_password
-from encryption_utils import decrypt
+from auth_utils import current_admin, decode_access_token, token_from_request, verify_password
 from verification_sender import get_settings as get_verification_settings, save_settings as save_verification_settings
 from color_names import get_color_range_config
-from routes.works import TEMPERATURE_RANGE_CONFIG
+from services.settings_store import (
+    ensure_json_setting as _ensure_json_setting,
+    set_json_setting as _set_json_setting,
+)
+from services.work_search import TEMPERATURE_RANGE_CONFIG
 from services.user_quota import SYSTEM_LEVEL_NAMES, reset_user_quota
 from routes.complaints import serialize_complaint
+from routes.notifications import add_notification
 
 router = APIRouter(prefix="/admin", tags=["后台管理"])
+verify_admin = current_admin
 
 # ===== 管理认证（仅接受 Authorization Bearer JWT）=====
 
 class AdminLoginRequest(BaseModel):
     username: str
     password: str
-
-
-def verify_admin(request: Request):
-    token = token_from_request(request)
-    if not token:
-        raise HTTPException(status_code=401, detail="缺少管理认证")
-    try:
-        payload = decode_access_token(token)
-        uid = int(payload.get("sub", 0))
-        if uid in ADMIN_USER_IDS:
-            return
-        from database import SessionLocal
-        db = SessionLocal()
-        try:
-            user = db.query(User).filter(User.id == uid).first()
-            if user and user.is_admin:
-                return
-        finally:
-            db.close()
-    except Exception:
-        pass
-    raise HTTPException(status_code=403, detail="无权访问")
 
 
 @router.post("/login")
@@ -251,34 +233,6 @@ class ColorRangeBody(BaseModel):
 class WorkSearchSettingsBody(BaseModel):
     temperature_ranges: list[TemperatureRangeBody] = []
     color_ranges: list[ColorRangeBody] = []
-
-
-def _get_json_setting(db: Session, key: str, default):
-    row = db.query(AppSetting).filter(AppSetting.key == key).first()
-    if not row or not row.value:
-        return default
-    try:
-        value = json.loads(row.value)
-    except Exception:
-        return default
-    return value if isinstance(value, type(default)) else default
-
-
-def _set_json_setting(db: Session, key: str, value) -> None:
-    row = db.query(AppSetting).filter(AppSetting.key == key).first()
-    if not row:
-        row = AppSetting(key=key)
-        db.add(row)
-    row.value = json.dumps(value, ensure_ascii=False)
-
-
-def _ensure_json_setting(db: Session, key: str, default):
-    row = db.query(AppSetting).filter(AppSetting.key == key).first()
-    if not row or not row.value:
-        _set_json_setting(db, key, default)
-        db.commit()
-        return default
-    return _get_json_setting(db, key, default)
 
 
 @router.post("/levels")
@@ -668,6 +622,10 @@ def admin_reply_complaint(
     item.status = "resolved" if item.is_resolved else "replied"
     db.commit()
     db.refresh(item)
+    add_notification(
+        db, user_id=item.user_id, from_user_id=admin_id, type="complaint_reply",
+        complaint_id=item.id, content=f"你的投诉建议 #{item.id} 收到了回复",
+    )
     return serialize_complaint(item, db, include_user=True)
 
 

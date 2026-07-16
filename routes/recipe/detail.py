@@ -1,28 +1,19 @@
-from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session, joinedload
-from database import get_db
-from models import AppSetting, Recipe, User, Review, Favorite, Work, RecipeSequence, Like, RecipeView, RecipeIngredient, IngredientName, RecipeSeger, RecipeVersion, FiringCurve
-from schemas import (
-    RecipeCreate, RecipeUpdate, RecipeOut, RecipeListItem,
-    ReviewCreate, ReviewOut,
-)
-from security import encrypt, decrypt, hash_for_lookup
-from image_utils import normalize_image_url, parse_image_list, serialize_image_list
-from auth_utils import user_id_from_request
-from services.recipe_access import require_recipe_reader
-from sqlalchemy import func
-from seger_calculator import calculate_seger
-from services.recipe_version import snapshot_recipe
-from color_names import color_name_in_range, get_color_range_config
 import json
 import logging
-from datetime import datetime
+
+from fastapi import APIRouter, Depends, HTTPException, Request
+from sqlalchemy import func
+from sqlalchemy.orm import Session
+
+from auth_utils import user_id_from_request
+from database import get_db
+from models import Favorite, FiringCurve, Like, Recipe, RecipeSeger, Review, User, Work
+from schemas import RecipeOut
+from services.recipe_access import require_recipe_reader
 
 logger = logging.getLogger('yunyao')
 
 router = APIRouter()
-
-from services.recipe_queries import *
 
 @router.get("/by-no/{recipe_no}")
 def get_recipe_by_no(recipe_no: str, request: Request, db: Session = Depends(get_db)):
@@ -34,6 +25,35 @@ def get_recipe_by_no(recipe_no: str, request: Request, db: Session = Depends(get
     return recipe
 
 # ========= 详情 =========
+
+@router.get("/{recipe_id}/link-preview")
+def get_recipe_link_preview(recipe_id: int, request: Request, db: Session = Depends(get_db)):
+    """Return non-sensitive metadata for recipe links without using view quota."""
+    recipe = db.query(Recipe).filter(Recipe.id == recipe_id).first()
+    if not recipe:
+        raise HTTPException(status_code=404, detail="配方不存在")
+    require_recipe_reader(
+        db,
+        recipe,
+        user_id_from_request(request),
+        consume_quota=False,
+    )
+    user = db.query(User).filter(User.id == recipe.user_id).first()
+    return {
+        "id": recipe.id,
+        "title": recipe.title,
+        "recipe_no": recipe.recipe_no or "",
+        "cover": recipe.cover or "",
+        "author_name": user.nickname if user else f"用户{recipe.user_id}",
+        "avatar": user.avatar if user else "",
+        "category": recipe.category or "",
+        "temperature": recipe.temperature or "",
+        "atmosphere": recipe.atmosphere or "",
+        "kiln_type": recipe.kiln_type or "",
+        "body_material": recipe.body_material or "",
+        "created_at": recipe.created_at,
+    }
+
 
 @router.get("/{recipe_id}", response_model=RecipeOut)
 def get_recipe(

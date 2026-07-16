@@ -1,78 +1,29 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy.orm import Session, joinedload
+from sqlalchemy.orm import Session
 from database import get_db
-from models import AppSetting, Work, Recipe, User, Favorite, WorkComment, FiringCurve, Like
-from sqlalchemy import func, inspect, text
-from datetime import datetime
+from models import Work, Recipe, User, Favorite, WorkComment, FiringCurve, Like
+from sqlalchemy import func
 import json
-from color_names import color_name_in_range, get_color_range_config, get_glaze_colors_data
-from image_utils import normalize_image_url, parse_image_list, serialize_image_list
+from color_names import get_glaze_colors_data
+from image_utils import normalize_image_url, serialize_image_list
 from auth_utils import current_user, user_id_from_request
-from services.recipe_access import require_recipe_reader
+from services.work_images import sanitize_work_images as _sanitize_work_images
+from services.work_recipe import (
+    recipe_for_work_link as _recipe_for_work_link,
+    set_work_recipe as _set_work_recipe,
+)
+from services.work_search import (
+    HAS_RECIPE_OPTIONS,
+    distinct_work_values as _distinct_work_values,
+    get_color_ranges as _get_color_ranges,
+    get_temperature_ranges as _get_temperature_ranges,
+    work_matches_search_filters as _work_matches_search_filters,
+)
+from routes.notifications import add_notification
 
 router = APIRouter(prefix="/works", tags=["作品"])
 
 
-def _recipe_for_work_link(db: Session, recipe_id, user_id: int) -> Recipe | None:
-    if recipe_id in (None, "", 0, "0"):
-        return None
-    try:
-        normalized_id = int(recipe_id)
-    except (TypeError, ValueError):
-        raise HTTPException(status_code=400, detail="配方编号无效")
-    recipe = db.query(Recipe).filter(Recipe.id == normalized_id).with_for_update().first()
-    if not recipe:
-        raise HTTPException(status_code=404, detail="配方不存在")
-    # 作品可以关联别人的配方，但关联者必须具备该配方的查看权限。
-    require_recipe_reader(db, recipe, user_id, consume_quota=True)
-    return recipe
-
-
-def _set_work_recipe(db: Session, work: Work, recipe_id, user_id: int) -> None:
-    new_recipe = _recipe_for_work_link(db, recipe_id, user_id)
-    new_recipe_id = new_recipe.id if new_recipe else None
-    if work.recipe_id == new_recipe_id:
-        return
-    if work.recipe_id:
-        old_recipe = db.query(Recipe).filter(Recipe.id == work.recipe_id).with_for_update().first()
-        if old_recipe:
-            old_recipe.work_count = max(0, (old_recipe.work_count or 0) - 1)
-    work.recipe_id = new_recipe_id
-    if new_recipe:
-        new_recipe.work_count = (new_recipe.work_count or 0) + 1
-
-
-TEMPERATURE_RANGE_CONFIG = [
-    {
-        "value": "low",
-        "label": "低温",
-        "min": 0,
-        "max": 1099,
-        "description": "低于 1100℃，常见于低温釉、彩绘和二次烧成。",
-    },
-    {
-        "value": "middle",
-        "label": "中温",
-        "min": 1100,
-        "max": 1249,
-        "description": "1100-1249℃，常见于中温釉和日用陶瓷烧成。",
-    },
-    {
-        "value": "high",
-        "label": "高温",
-        "min": 1250,
-        "max": 1450,
-        "description": "1250℃ 及以上，常见于高温瓷、青瓷和部分还原烧。",
-    },
-]
-
-SURFACE_OPTIONS = ["亮光", "丝光", "蜡光", "柔光", "无光", "磨砂"]
-TRANSPARENCY_OPTIONS = ["高透", "微透", "半透", "不透"]
-KILN_TYPE_OPTIONS = ["电窑", "气窑", "柴窑", "乐烧"]
-HAS_RECIPE_OPTIONS = [
-    {"value": "yes", "label": "有配方"},
-    {"value": "no", "label": "无配方"},
-]
 
 
 # ---------- 关注动态 ----------
@@ -142,19 +93,6 @@ def following_works(
     return result
 
 
-def _is_persisted_image_url(image: str) -> bool:
-    normalized = normalize_image_url(image)
-    return normalized.startswith(("http://", "https://", "/uploads/", "/media/"))
-
-
-def _sanitize_work_images(image, images) -> tuple[str, list[str]]:
-    """Drop browser-local URLs and return a durable primary image plus image list."""
-    candidates = [normalize_image_url(image), *parse_image_list(images)]
-    durable: list[str] = []
-    for candidate in candidates:
-        normalized = normalize_image_url(candidate)
-        if _is_persisted_image_url(normalized) and normalized not in durable:
-            durable.append(normalized)
     return (durable[0] if durable else ""), durable
 
 
@@ -162,131 +100,6 @@ def _sanitize_work_images(image, images) -> tuple[str, list[str]]:
 
 
 
-def _temperature_value(raw: str):
-    if not raw:
-        return None
-    digits = ""
-    for ch in str(raw):
-        if ch.isdigit() or (ch == "." and "." not in digits):
-            digits += ch
-        elif digits:
-            break
-    if not digits:
-        return None
-    try:
-        return float(digits)
-    except ValueError:
-        return None
-
-
-def _get_json_setting(db: Session, key: str, default):
-    row = db.query(AppSetting).filter(AppSetting.key == key).first()
-    if not row or not row.value:
-        return default
-    try:
-        value = json.loads(row.value)
-    except Exception:
-        return default
-    return value if isinstance(value, type(default)) else default
-
-
-def _get_temperature_ranges(db: Session) -> list:
-    return _get_json_setting(db, "work_search_temperature_ranges", TEMPERATURE_RANGE_CONFIG)
-
-
-def _get_color_ranges(db: Session) -> list:
-    return _get_json_setting(db, "work_search_color_ranges", get_color_range_config())
-
-
-def _temperature_in_range(raw: str, range_value: str, temperature_ranges: list) -> bool:
-    temp = _temperature_value(raw)
-    if temp is None:
-        return False
-    for item in temperature_ranges:
-        if item["value"] == range_value:
-            return item["min"] <= temp <= item["max"]
-    return False
-
-
-def _color_name_in_ranges(name: str, range_value: str, color_ranges: list) -> bool:
-    if not name or not range_value:
-        return False
-    for item in color_ranges:
-        if item.get("value") == range_value:
-            return name in (item.get("names") or [])
-    return color_name_in_range(name, range_value)
-
-
-def _work_has_color_range(work: Work, range_value: str, color_ranges: list) -> bool:
-    if not range_value:
-        return True
-    try:
-        colors = json.loads(work.glaze_colors) if work.glaze_colors else []
-    except Exception:
-        colors = []
-    if not isinstance(colors, list):
-        return False
-    return any(_color_name_in_ranges((item or {}).get("name", ""), range_value, color_ranges) for item in colors)
-
-
-def _same_filter_value(raw: str, selected: str) -> bool:
-    selected_value = str(selected or "").strip()
-    if not selected_value:
-        return True
-    raw_value = str(raw or "").strip()
-    if not raw_value:
-        return False
-    return raw_value == selected_value
-
-
-def _work_matches_search_filters(
-    work: Work,
-    recipe: Recipe,
-    category: str,
-    atmosphere: str,
-    body_material: str,
-    kiln_type: str,
-    temperature: str,
-    temperature_range: str,
-    surface: str,
-    transparency: str,
-    color_range: str,
-    has_recipe: str,
-    temperature_ranges: list,
-    color_ranges: list,
-) -> bool:
-    """All selected work-search filters are AND conditions."""
-    if category and not _same_filter_value(work.category, category):
-        return False
-    if atmosphere and not _same_filter_value(work.atmosphere, atmosphere):
-        return False
-    if body_material and not _same_filter_value(work.body_material, body_material):
-        return False
-    if kiln_type and not _same_filter_value(work.kiln_type, kiln_type):
-        return False
-    if surface and not _same_filter_value(work.surface, surface):
-        return False
-    if transparency and not _same_filter_value(work.transparency, transparency):
-        return False
-    if temperature and not _same_filter_value(work.temperature, temperature):
-        return False
-    if temperature_range and not _temperature_in_range(work.temperature, temperature_range, temperature_ranges):
-        return False
-    if color_range and not _work_has_color_range(work, color_range, color_ranges):
-        return False
-    has_linked_recipe = recipe is not None
-    if has_recipe == "yes" and not has_linked_recipe:
-        return False
-    if has_recipe == "no" and has_linked_recipe:
-        return False
-    return True
-
-
-def _distinct_work_values(db: Session, column) -> list[str]:
-    return [row[0] for row in db.query(column).filter(
-        column != "",
-        column.isnot(None),
-    ).distinct().order_by(column).all()]
 
 
 @router.get("/search/config")
@@ -717,10 +530,13 @@ def create_work(
 
 @router.post("/{work_id}/favorite", dependencies=[Depends(current_user)])
 def toggle_work_favorite(work_id: int, data: dict, db: Session = Depends(get_db)):
-    """点赞/取消点赞作品"""
+    """收藏/取消收藏作品"""
     user_id = data.get("user_id", 0)
     if not user_id:
         raise HTTPException(status_code=400, detail="请先登录")
+    work = db.query(Work).filter(Work.id == work_id).first()
+    if not work:
+        raise HTTPException(status_code=404, detail="作品不存在")
     existing = db.query(Favorite).filter(
         Favorite.work_id == work_id,
         Favorite.user_id == user_id,
@@ -732,6 +548,12 @@ def toggle_work_favorite(work_id: int, data: dict, db: Session = Depends(get_db)
     fav = Favorite(work_id=work_id, user_id=user_id)
     db.add(fav)
     db.commit()
+    actor = db.query(User).filter(User.id == user_id).first()
+    actor_name = (actor.nickname or actor.username) if actor else f"用户{user_id}"
+    add_notification(
+        db, user_id=work.user_id, from_user_id=user_id, type="favorite",
+        work_id=work_id, content=f"{actor_name} 收藏了你的作品",
+    )
     return {"favorited": True, "favorite_count": db.query(Favorite).filter(Favorite.work_id == work_id).count()}
 
 
@@ -753,6 +575,12 @@ def toggle_work_like(work_id: int, user_id: int = Query(...), db: Session = Depe
     db.add(like)
     work.likes = (work.likes or 0) + 1
     db.commit()
+    actor = db.query(User).filter(User.id == user_id).first()
+    actor_name = (actor.nickname or actor.username) if actor else f"用户{user_id}"
+    add_notification(
+        db, user_id=work.user_id, from_user_id=user_id, type="like",
+        work_id=work_id, content=f"{actor_name} 点赞了你的作品",
+    )
     return {"liked": True, "likes": work.likes}
 
 

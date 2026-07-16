@@ -84,6 +84,7 @@ def create_work_comment(work_id: int, body: WorkCommentCreate, db: Session = Dep
         raise HTTPException(status_code=400, detail="请先登录")
 
     parent_id = body.parent_id if body.parent_id and body.parent_id > 0 else None
+    parent = None
     if parent_id:
         parent = db.query(WorkComment).filter(
             WorkComment.id == parent_id,
@@ -103,17 +104,18 @@ def create_work_comment(work_id: int, body: WorkCommentCreate, db: Session = Dep
     db.refresh(comment)
     user = db.query(User).filter(User.id == body.user_id).first()
 
-    # 给作品主人发通知
+    # 回复优先通知被回复者，顶级评论通知作品主人。
     work = db.query(Work).filter(Work.id == work_id).first()
-    if work and work.user_id != body.user_id:
+    target_user_id = parent.user_id if parent else (work.user_id if work else None)
+    if target_user_id and target_user_id != body.user_id:
         username = (user.nickname or user.username) if user else f"用户{body.user_id}"
         add_notification(
             db=db,
-            user_id=work.user_id,
+            user_id=target_user_id,
             from_user_id=body.user_id,
             type="comment",
             work_id=work_id,
-            content=f"{username} 评论了你的作品",
+            content=f"{username} {'回复了你的评论' if parent else '评论了你的作品'}",
         )
 
     return {
