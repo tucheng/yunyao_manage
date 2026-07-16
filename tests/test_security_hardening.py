@@ -1,6 +1,7 @@
 import json
 import unittest
 from io import BytesIO
+from pathlib import Path
 
 from cryptography.fernet import Fernet
 from PIL import Image
@@ -73,6 +74,25 @@ class ImageNormalizationTests(unittest.TestCase):
         with Image.open(BytesIO(clean)) as image:
             self.assertEqual(image.size, (20, 20))
             self.assertFalse(image.getexif())
+
+
+class ReverseProxySecurityTests(unittest.TestCase):
+    def test_proxy_terminates_tls_and_overwrites_forwarded_identity(self):
+        root = Path(__file__).resolve().parents[1]
+        for name in ("nginx.conf", "nginx.canary.conf"):
+            config = (root / "deploy" / name).read_text(encoding="utf-8")
+            self.assertIn("listen 443 ssl;", config)
+            self.assertIn("ssl_protocols TLSv1.2 TLSv1.3;", config)
+            self.assertIn("proxy_set_header X-Forwarded-For $remote_addr;", config)
+            self.assertNotIn("$proxy_add_x_forwarded_for", config)
+            self.assertNotIn("$http_x_forwarded_proto", config)
+
+    def test_compose_requires_certificate_mounts(self):
+        root = Path(__file__).resolve().parents[1]
+        compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
+        self.assertIn("${TLS_CERT_FILE:?set TLS_CERT_FILE}", compose)
+        self.assertIn("${TLS_KEY_FILE:?set TLS_KEY_FILE}", compose)
+        self.assertIn("${HTTPS_PORT:-443}:443", compose)
 
 
 if __name__ == "__main__":

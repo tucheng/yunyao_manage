@@ -40,6 +40,7 @@ from observability import (
     instrument_sql,
     request_id_var,
 )
+from services.business_errors import QuotaExceeded
 from routes import (
     admin,
     auth,
@@ -68,6 +69,20 @@ app = FastAPI(
     redoc_url=None if IS_PRODUCTION else "/redoc",
     openapi_url=None if IS_PRODUCTION else "/openapi.json",
 )
+
+
+@app.exception_handler(QuotaExceeded)
+async def quota_exceeded_handler(_request: Request, exc: QuotaExceeded):
+    """Return an expected business response that existing clients can display."""
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={
+            "detail": exc.detail,
+            "code": exc.code,
+            "quota_kind": exc.quota_kind,
+            "remaining": exc.remaining,
+        },
+    )
 
 
 @app.exception_handler(IntegrityError)

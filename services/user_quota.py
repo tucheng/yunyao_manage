@@ -6,6 +6,7 @@ from fastapi import HTTPException
 from sqlalchemy.orm import Session
 
 from models import RedeemLog, User, UserDailyRecipeView, UserLevel, UserUsageQuota
+from services.business_errors import QuotaExceeded
 
 
 TRIAL_LEVEL_ID = 1
@@ -150,9 +151,9 @@ def consume_quota(db: Session, user: User, kind: QuotaKind) -> int:
     remaining = getattr(quota, field) or 0
     if remaining <= 0:
         if kind == "recipe":
-            raise HTTPException(status_code=403, detail="今天发布配方的额度已用完！")
+            raise QuotaExceeded("recipe", "今天发布配方的额度已用完！")
         else:
-            raise HTTPException(status_code=403, detail=f"今天{_QUOTA_LABEL[kind]}额度已使用完")
+            raise QuotaExceeded(kind, f"今天{_QUOTA_LABEL[kind]}额度已使用完")
     remaining -= 1
     setattr(quota, field, remaining)
     db.flush()
@@ -164,7 +165,7 @@ def consume_recipe_view_once(db: Session, user: User, recipe_id: int) -> tuple[b
     quota, level = get_or_create_quota(db, user, for_update=True)
     # max_views=0 是硬性禁止查看，不能被“今天曾看过该配方”绕过。
     if max(0, level.max_views or 0) == 0:
-        raise HTTPException(status_code=403, detail="当前等级无查看配方权限")
+        raise QuotaExceeded("recipe_view", "当前等级无查看配方权限")
     viewed = db.query(UserDailyRecipeView).filter(
         UserDailyRecipeView.user_id == user.id,
         UserDailyRecipeView.recipe_id == recipe_id,
@@ -174,7 +175,7 @@ def consume_recipe_view_once(db: Session, user: User, recipe_id: int) -> tuple[b
         return False, quota.recipe_view_remaining
     remaining = quota.recipe_view_remaining or 0
     if remaining <= 0:
-        raise HTTPException(status_code=403, detail="今天查看配方额度已使用完")
+        raise QuotaExceeded("recipe_view", "今天查看配方额度已使用完")
     remaining -= 1
     quota.recipe_view_remaining = remaining
     db.add(UserDailyRecipeView(user_id=user.id, recipe_id=recipe_id, view_date=today))

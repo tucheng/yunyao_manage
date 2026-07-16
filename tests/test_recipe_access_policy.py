@@ -32,8 +32,15 @@ class RecipeAccessPolicyTests(unittest.TestCase):
         self.db.add_all([self.level, self.owner, self.viewer])
         self.db.flush()
         self.public_recipe = Recipe(user_id=self.owner.id, title="公开", visibility="public")
+        self.second_public_recipe = Recipe(user_id=self.owner.id, title="公开二", visibility="public")
+        self.third_public_recipe = Recipe(user_id=self.owner.id, title="公开三", visibility="public")
         self.private_recipe = Recipe(user_id=self.owner.id, title="私密", visibility="private")
-        self.db.add_all([self.public_recipe, self.private_recipe])
+        self.db.add_all([
+            self.public_recipe,
+            self.second_public_recipe,
+            self.third_public_recipe,
+            self.private_recipe,
+        ])
         self.db.commit()
 
     def tearDown(self):
@@ -55,6 +62,18 @@ class RecipeAccessPolicyTests(unittest.TestCase):
         require_recipe_reader(self.db, self.private_recipe, self.owner.id, consume_quota=True)
         quota = self.db.query(UserUsageQuota).filter_by(user_id=self.owner.id).first()
         self.assertIsNone(quota)
+
+    def test_new_recipe_view_is_blocked_after_daily_quota_is_exhausted(self):
+        require_recipe_reader(self.db, self.public_recipe, self.viewer.id, consume_quota=True)
+        require_recipe_reader(self.db, self.second_public_recipe, self.viewer.id, consume_quota=True)
+
+        with self.assertRaises(HTTPException) as caught:
+            require_recipe_reader(self.db, self.third_public_recipe, self.viewer.id, consume_quota=True)
+
+        self.assertEqual(403, caught.exception.status_code)
+        self.assertEqual("QUOTA_EXHAUSTED", caught.exception.code)
+        self.assertEqual("recipe_view", caught.exception.quota_kind)
+        self.assertEqual(0, caught.exception.remaining)
 
     def test_zero_view_level_blocks_even_a_recipe_viewed_earlier_today(self):
         require_recipe_reader(self.db, self.public_recipe, self.viewer.id, consume_quota=True)
