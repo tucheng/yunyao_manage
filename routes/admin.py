@@ -1,10 +1,15 @@
-from datetime import datetime, time
+import json
+from datetime import datetime, time, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from sqlalchemy import and_, exists, func, or_
 from database import get_db
-from models import Complaint, ComplaintReply, User, UserLevel, Recipe, Work, WorkAttributeOption, Material, MaterialSubstitution
+from models import (
+    Complaint, ComplaintReply, User, UserLevel, Recipe, RecipeIngredient, Work,
+    WorkAttributeOption, Material, MaterialFamily, MaterialMergeLog,
+    MaterialRevision, MaterialSubstitution,
+)
 from pydantic import BaseModel
 from typing import Optional
 from app_config import ADMIN_USER_IDS
@@ -19,6 +24,17 @@ from services.work_search import TEMPERATURE_RANGE_CONFIG
 from services.user_quota import SYSTEM_LEVEL_NAMES, reset_user_quota
 from routes.complaints import serialize_complaint
 from routes.notifications import add_notification
+from services.material_analysis import (
+    affected_recipe_ids,
+    backfill_recipe_material_links,
+    composition_fingerprint,
+    duplicate_groups,
+    merge_materials,
+    prepare_material,
+    recalculate_material_recipes,
+    rollback_material_merge,
+)
+from services.material_catalog import clean_molecule_data, catalog_payload
 
 router = APIRouter(prefix="/admin", tags=["后台管理"])
 verify_admin = current_admin
@@ -426,13 +442,22 @@ def get_public_work_attributes(db: Session = Depends(get_db)):
 @router.get("/materials")
 def admin_list_materials(
     search: Optional[str] = Query(None),
+    status: Optional[str] = Query(None),
+    duplicate_only: bool = Query(False),
     page: int = Query(1, ge=1),
     page_size: int = Query(30, ge=1, le=200),
     db: Session = Depends(get_db),
     _=Depends(verify_admin),
 ):
     """管理员查看原材料列表"""
-    q = db.query(Material)
+    q = db.query(Material).filter(Material.is_active.is_(True))
+    if status:
+        q = q.filter(Material.status == status)
+    if duplicate_only:
+        duplicate_family_ids = db.query(Material.family_id).filter(
+            Material.is_active.is_(True), Material.family_id.isnot(None),
+        ).group_by(Material.family_id).having(func.count(Material.id) > 1)
+        q = q.filter(Material.family_id.in_(duplicate_family_ids))
     search_whitespace = (" ", "\u3000", "\t", "\r", "\n", "\v", "\f", "\u00a0")
     normalized_search = search or ""
     for whitespace in search_whitespace:
@@ -458,7 +483,9 @@ def admin_list_materials(
         "data": [
             {
                 "id": m.id,
+                "family_id": m.family_id,
                 "name": m.name,
+                "variant_name": m.variant_name or "",
                 "name_en": m.name_en,
                 "source": m.source,
                 "source_id": m.source_id,
@@ -476,10 +503,279 @@ def admin_list_materials(
                 "cr2o3": m.cr2o3, "pbo": m.pbo,
                 "bao": m.bao, "sro": m.sro,
                 "loi": m.loi, "thermal_expansion": m.thermal_expansion,
+                "status": m.status,
+                "created_from": m.created_from or "",
+                "is_default": bool(m.family_id and db.query(MaterialFamily.default_material_id).filter(
+                    MaterialFamily.id == m.family_id,
+                ).scalar() == m.id),
+                "variant_count": db.query(func.count(Material.id)).filter(
+                    Material.family_id == m.family_id, Material.is_active.is_(True),
+                ).scalar() if m.family_id else 1,
+                "affected_recipe_count": db.query(func.count(func.distinct(RecipeIngredient.recipe_id))).filter(
+                    RecipeIngredient.material_id == m.id,
+                ).scalar() or 0,
+                "owner": ({"id": m.user_id, "name": db.query(User.nickname).filter(User.id == m.user_id).scalar() or ""}
+                          if m.user_id else None),
+                "review_note": m.review_note or "",
             }
             for m in items
         ],
     }
+
+
+@router.get("/material-dedup/groups")
+def admin_duplicate_material_groups(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    groups = duplicate_groups(db)
+    return {
+        "groups": groups,
+        "total": len(groups),
+        "exact": sum(item["duplicate_type"] == "exact" for item in groups),
+        "conflict": sum(item["duplicate_type"] == "conflict" for item in groups),
+    }
+
+
+@router.get("/material-families/{family_id}")
+def admin_material_family(family_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    family = db.query(MaterialFamily).filter(MaterialFamily.id == family_id).first()
+    if not family:
+        raise HTTPException(status_code=404, detail="材料族不存在")
+    variants = db.query(Material).filter(Material.family_id == family_id, Material.is_active.is_(True)).order_by(Material.id).all()
+    return {
+        "id": family.id,
+        "name": family.canonical_name,
+        "default_material_id": family.default_material_id,
+        "variants": [dict(catalog_payload(item),
+                          affected_recipe_count=len(affected_recipe_ids(db, item.id)),
+                          is_default=item.id == family.default_material_id)
+                     for item in variants],
+    }
+
+
+@router.post("/materials/{material_id}/set-default")
+def admin_set_default_material(material_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    material = db.query(Material).filter(Material.id == material_id, Material.is_active.is_(True)).first()
+    if not material or not material.family_id:
+        raise HTTPException(status_code=404, detail="材料或材料族不存在")
+    if material.status != "recalculated" or material.data_quality_status == "disabled":
+        raise HTTPException(status_code=409, detail="只有审核并重算完成的有效材料才能设为默认")
+    family = db.query(MaterialFamily).filter(MaterialFamily.id == material.family_id).first()
+    family.default_material_id = material.id
+    db.commit()
+    backfill = backfill_recipe_material_links(db, family_id=family.id)
+    recalculation = recalculate_material_recipes(db, material)
+    return {
+        "message": "已设为默认变体并重新计算关联配方",
+        "material_id": material.id,
+        "backfill": backfill,
+        "recalculation": recalculation,
+    }
+
+
+@router.post("/material-dedup/backfill-links")
+def admin_backfill_material_links(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    result = backfill_recipe_material_links(db)
+    return {"message": f"已关联 {result['linked']} 条历史配料", **result}
+
+
+@router.post("/materials/{source_id}/merge")
+def admin_merge_material(
+    source_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    source = db.query(Material).filter(Material.id == source_id).first()
+    target = db.query(Material).filter(Material.id == int(body.get("target_material_id") or 0)).first()
+    if not source or not target:
+        raise HTTPException(status_code=404, detail="源材料或目标材料不存在")
+    composition_changed = (
+        (source.composition_fingerprint or composition_fingerprint(source))
+        != (target.composition_fingerprint or composition_fingerprint(target))
+    )
+    try:
+        log = merge_materials(
+            db, source=source, target=target, admin_user_id=admin.id,
+            reason=str(body.get("reason") or "管理员合并"),
+            require_exact=bool(body.get("require_exact", False)),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    db.commit()
+    recalculation = recalculate_material_recipes(db, target) if composition_changed else {
+        "total": 0, "succeeded": 0, "failed": 0, "failures": [],
+    }
+    return {
+        "message": "材料已软合并", "merge_log_id": log.id,
+        "target_material_id": target.id, "recalculation": recalculation,
+    }
+
+
+@router.post("/material-dedup/auto-merge-exact")
+def admin_auto_merge_exact(db: Session = Depends(get_db), admin: User = Depends(verify_admin)):
+    merged = []
+    for group in duplicate_groups(db):
+        for cluster in group["exact_clusters"]:
+            variants = db.query(Material).filter(Material.id.in_(cluster), Material.is_active.is_(True)).all()
+            if len(variants) < 2:
+                continue
+            target = max(variants, key=lambda item: (
+                item.status == "recalculated",
+                sum(getattr(item, field, None) is not None for field in (
+                    "sio2", "al2o3", "fe2o3", "tio2", "cao", "mgo", "na2o", "k2o",
+                    "zno", "b2o3", "p2o5", "li2o", "mno2", "coo", "sno2", "cuo",
+                    "cr2o3", "pbo", "bao", "sro", "loi",
+                )),
+                -item.id,
+            ))
+            for source in variants:
+                if source.id == target.id:
+                    continue
+                log = merge_materials(
+                    db, source=source, target=target, admin_user_id=admin.id,
+                    reason="自动合并完全相同的成分指纹", require_exact=True,
+                )
+                merged.append({"source_id": source.id, "target_id": target.id, "log_id": log.id})
+    db.commit()
+    return {"message": f"已合并 {len(merged)} 条完全重复材料", "merged": merged}
+
+
+@router.put("/materials/{material_id}")
+def admin_update_material(
+    material_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    material = db.query(Material).filter(Material.id == material_id, Material.is_active.is_(True)).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="材料不存在")
+    cleaned = clean_molecule_data(body, partial=True)
+    revision = db.query(MaterialRevision).filter(
+        MaterialRevision.material_id == material.id,
+        MaterialRevision.status.in_(("initial", "submitted")),
+    ).order_by(MaterialRevision.id.desc()).first()
+    payload = json.loads(revision.payload_json or "{}") if revision else clean_molecule_data(catalog_payload(material), partial=True)
+    payload.update(cleaned)
+    if not revision:
+        revision = MaterialRevision(material_id=material.id, submitted_by=admin.id)
+        db.add(revision)
+    revision.payload_json = json.dumps(payload, ensure_ascii=False, default=str)
+    revision.status = "submitted"
+    revision.submitted_by = admin.id
+    material.status = "submitted"
+    material.submitted_at = datetime.now(timezone.utc)
+    if "variant_name" in body:
+        material.variant_name = str(body.get("variant_name") or "").strip()[:200]
+    db.commit()
+    return {**catalog_payload(material), "draft": payload}
+
+
+@router.post("/materials/{material_id}/approve-and-recalculate")
+def admin_approve_and_recalculate(
+    material_id: int,
+    body: dict | None = None,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    material = db.query(Material).filter(Material.id == material_id, Material.is_active.is_(True)).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="材料不存在")
+    revision = db.query(MaterialRevision).filter(
+        MaterialRevision.material_id == material.id,
+        MaterialRevision.status == "submitted",
+    ).order_by(MaterialRevision.id.desc()).first()
+    payload = json.loads(revision.payload_json or "{}") if revision else {}
+    if body:
+        payload.update(body.get("data") or {})
+    cleaned = clean_molecule_data(payload, partial=True)
+    if not any(cleaned.get(field) not in (None, 0, 0.0) for field in (
+        "sio2", "al2o3", "fe2o3", "tio2", "cao", "mgo", "na2o", "k2o",
+        "zno", "b2o3", "p2o5", "li2o", "mno2", "coo", "sno2", "cuo", "cr2o3", "pbo", "bao", "sro",
+    )):
+        raise HTTPException(status_code=400, detail="材料没有可用于计算的氧化物数据")
+    for field, value in cleaned.items():
+        setattr(material, field, value)
+    material.status = "recalculated"  # calculation must be allowed to consume the approved values
+    material.reviewed_by = admin.id
+    material.reviewed_at = datetime.now(timezone.utc)
+    material.review_note = str((body or {}).get("review_note") or "")
+    material.composition_fingerprint = composition_fingerprint(material)
+    if revision:
+        revision.status = "approved"
+    prepare_material(db, material)
+    family = db.query(MaterialFamily).filter(MaterialFamily.id == material.family_id).first()
+    if family and not family.default_material_id:
+        family.default_material_id = material.id
+    db.commit()
+    result = recalculate_material_recipes(db, material)
+    material.status = "recalculated" if result["failed"] == 0 else "submitted"
+    material.recalculated_at = datetime.now(timezone.utc) if result["failed"] == 0 else None
+    db.commit()
+    return {"message": "审核及重算完成" if result["failed"] == 0 else "部分配方重算失败", "result": result, "status": material.status}
+
+
+@router.post("/materials/{material_id}/reject")
+def admin_reject_material(
+    material_id: int,
+    body: dict,
+    db: Session = Depends(get_db),
+    admin: User = Depends(verify_admin),
+):
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="材料不存在")
+    revision = db.query(MaterialRevision).filter(
+        MaterialRevision.material_id == material.id, MaterialRevision.status == "submitted",
+    ).order_by(MaterialRevision.id.desc()).first()
+    if revision:
+        revision.status = "initial"
+    material.status = "initial"
+    material.reviewed_by = admin.id
+    material.reviewed_at = datetime.now(timezone.utc)
+    material.review_note = str(body.get("reason") or "请完善材料数据")[:2000]
+    db.commit()
+    return {"message": "已退回修改", "status": material.status}
+
+
+@router.get("/materials/{material_id}/affected-recipes")
+def admin_affected_recipes(material_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    rows = db.query(Recipe).join(RecipeIngredient, RecipeIngredient.recipe_id == Recipe.id).filter(
+        RecipeIngredient.material_id == material_id,
+    ).distinct().order_by(Recipe.id.desc()).all()
+    return [{"id": item.id, "recipe_no": item.recipe_no, "title": item.title, "user_id": item.user_id} for item in rows]
+
+
+@router.post("/materials/{material_id}/disable")
+def admin_disable_material(material_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    material = db.query(Material).filter(Material.id == material_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="材料不存在")
+    material.data_quality_status = "disabled"
+    db.commit()
+    return {"message": "已禁用，该材料不再参与新的 Seger 计算"}
+
+
+@router.get("/material-merge-logs")
+def admin_material_merge_logs(db: Session = Depends(get_db), _=Depends(verify_admin)):
+    rows = db.query(MaterialMergeLog).order_by(MaterialMergeLog.id.desc()).limit(200).all()
+    return [{
+        "id": row.id, "source_material_id": row.source_material_id,
+        "target_material_id": row.target_material_id, "reason": row.reason,
+        "merged_by": row.merged_by, "merged_at": row.merged_at,
+        "rolled_back_at": row.rolled_back_at,
+    } for row in rows]
+
+
+@router.post("/material-merge-logs/{log_id}/rollback")
+def admin_rollback_material_merge(log_id: int, db: Session = Depends(get_db), _=Depends(verify_admin)):
+    log = db.query(MaterialMergeLog).filter(MaterialMergeLog.id == log_id).first()
+    if not log:
+        raise HTTPException(status_code=404, detail="合并记录不存在")
+    try:
+        result = rollback_material_merge(db, log)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"message": "材料合并已回滚", **result}
 
 
 @router.delete("/materials/{material_id}")
@@ -492,14 +788,22 @@ def admin_delete_material(
     if not material:
         raise HTTPException(status_code=404, detail="材料不存在")
 
+    affected = affected_recipe_ids(db, material_id)
+    if affected:
+        raise HTTPException(status_code=409, detail=f"该材料影响 {len(affected)} 个配方，请先合并或重新关联材料")
+    family = db.query(MaterialFamily).filter(MaterialFamily.id == material.family_id).first() if material.family_id else None
+    if family and family.default_material_id == material.id:
+        raise HTTPException(status_code=409, detail="该材料是材料族默认变体，请先设置其他默认变体")
+
     deleted_substitutions = db.query(MaterialSubstitution).filter(or_(
         MaterialSubstitution.source_material_id == material_id,
         MaterialSubstitution.target_material_id == material_id,
     )).delete(synchronize_session=False)
-    db.delete(material)
+    material.is_active = False
+    material.data_quality_status = "disabled"
     db.commit()
     return {
-        "message": "材料已删除",
+        "message": "材料已停用",
         "deleted_substitutions": deleted_substitutions,
     }
 

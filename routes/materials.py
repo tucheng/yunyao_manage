@@ -1,3 +1,5 @@
+import json
+from datetime import datetime, timezone
 from typing import Optional
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
@@ -5,7 +7,7 @@ from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 from database import get_db
 from auth_utils import current_user
-from models import Material, MaterialSubstitution, UserMaterial
+from models import Material, MaterialRevision, MaterialSubstitution, RecipeIngredient, UserMaterial
 from services.material_similarity import (
     TOP_SIMILAR_MATERIALS,
     material_similarity,
@@ -21,8 +23,29 @@ from services.user_materials import (
     next_order as _next_order,
     put_material_in_status as _put_material_in_status,
 )
+from services.material_analysis import prepare_material
 
 router = APIRouter(prefix="/materials", tags=["材料库"])
+
+
+def _molecule_payload(db: Session, material: Material) -> dict:
+    result = _catalog_payload(material)
+    revision = db.query(MaterialRevision).filter(
+        MaterialRevision.material_id == material.id,
+        MaterialRevision.status.in_(("initial", "submitted")),
+    ).order_by(MaterialRevision.id.desc()).first()
+    if revision:
+        draft = _clean_molecule_data(json.loads(revision.payload_json or "{}"), partial=True)
+        result["draft"] = draft
+        result["draft_status"] = revision.status
+        result.update(draft)
+    else:
+        result["draft"] = None
+        result["draft_status"] = ""
+    result["affected_recipe_count"] = db.query(func.count(func.distinct(RecipeIngredient.recipe_id))).filter(
+        RecipeIngredient.material_id == material.id,
+    ).scalar() or 0
+    return result
 
 
 
@@ -48,7 +71,7 @@ def list_my_material_molecules(
         .all()
     )
     return {
-        "items": [_catalog_payload(item) for item in items],
+        "items": [_molecule_payload(db, item) for item in items],
         "total": total,
         "page": page,
         "page_size": page_size,
@@ -67,12 +90,23 @@ def create_material_molecule(data: dict, request: Request, db: Session = Depends
         source_id=None,
         is_analysis=1,
         is_primitive=0,
+        status="initial",
+        created_from="frontend",
         **cleaned,
     )
     db.add(material)
+    db.flush()
+    prepare_material(db, material)
+    revision = MaterialRevision(
+        material_id=material.id,
+        submitted_by=user_id,
+        payload_json=json.dumps(cleaned, ensure_ascii=False),
+        status="initial",
+    )
+    db.add(revision)
     db.commit()
     db.refresh(material)
-    return _catalog_payload(material)
+    return _molecule_payload(db, material)
 
 
 @router.put("/molecules/{material_id}", dependencies=[Depends(current_user)])
@@ -89,14 +123,58 @@ def update_material_molecule(
     ).first()
     if not material:
         raise HTTPException(status_code=404, detail="材料不存在或无权修改")
+    if material.status == "submitted":
+        raise HTTPException(status_code=409, detail="材料正在等待管理员审核，暂不能修改")
     cleaned = _clean_molecule_data(data, partial=True)
     if "name" in cleaned and _material_name_conflict(db, cleaned["name"], exclude_id=material.id):
         raise HTTPException(status_code=409, detail="材料名已存在（忽略空白后不可重名）")
-    for field, value in cleaned.items():
-        setattr(material, field, value)
+    revision = db.query(MaterialRevision).filter(
+        MaterialRevision.material_id == material.id,
+        MaterialRevision.status.in_(("initial", "submitted")),
+    ).order_by(MaterialRevision.id.desc()).first()
+    draft = (
+        _clean_molecule_data(json.loads(revision.payload_json or "{}"), partial=True)
+        if revision else _clean_molecule_data(_catalog_payload(material), partial=True)
+    )
+    draft.update(cleaned)
+    if not revision:
+        revision = MaterialRevision(material_id=material.id, submitted_by=user_id, status="initial")
+        db.add(revision)
+    revision.payload_json = json.dumps(draft, ensure_ascii=False, default=str)
+    revision.status = "initial"
+    material.status = "initial"
+    material.submitted_at = None
+    material.review_note = None
     db.commit()
     db.refresh(material)
-    return _catalog_payload(material)
+    return _molecule_payload(db, material)
+
+
+@router.post("/molecules/{material_id}/submit", dependencies=[Depends(current_user)])
+def submit_material_molecule(material_id: int, request: Request, db: Session = Depends(get_db)):
+    user_id = _request_user_id(request)
+    material = db.query(Material).filter(Material.id == material_id, Material.user_id == user_id).first()
+    if not material:
+        raise HTTPException(status_code=404, detail="材料不存在或无权提交")
+    revision = db.query(MaterialRevision).filter(
+        MaterialRevision.material_id == material.id,
+        MaterialRevision.status == "initial",
+    ).order_by(MaterialRevision.id.desc()).first()
+    if not revision:
+        raise HTTPException(status_code=409, detail="请先保存材料分子数据")
+    payload = json.loads(revision.payload_json or "{}")
+    if not any(payload.get(field) not in (None, "", 0, 0.0) for field in (
+        "sio2", "al2o3", "fe2o3", "tio2", "cao", "mgo", "na2o", "k2o",
+        "zno", "b2o3", "p2o5", "li2o", "mno2", "coo", "sno2", "cuo",
+        "cr2o3", "pbo", "bao", "sro",
+    )):
+        raise HTTPException(status_code=400, detail="至少填写一种有效氧化物后才能提交")
+    revision.status = "submitted"
+    material.status = "submitted"
+    material.submitted_at = datetime.now(timezone.utc)
+    material.review_note = None
+    db.commit()
+    return {"message": "已提交管理员审核", "id": material.id, "status": material.status}
 
 
 @router.delete("/molecules/{material_id}", dependencies=[Depends(current_user)])
@@ -112,6 +190,8 @@ def delete_material_molecule(material_id: int, request: Request, db: Session = D
         MaterialSubstitution.source_material_id == material.id,
         MaterialSubstitution.target_material_id == material.id,
     )).first()
+    if db.query(RecipeIngredient.id).filter(RecipeIngredient.material_id == material.id).first():
+        raise HTTPException(status_code=409, detail="该材料已被配方使用，不能删除")
     if is_referenced:
         raise HTTPException(status_code=409, detail="该材料已有关联相似品数据，暂不能删除")
     db.delete(material)
@@ -127,7 +207,7 @@ def list_material_catalog(
     db: Session = Depends(get_db),
 ):
     """从合并后的 materials 表查询统一原材料目录。"""
-    query = db.query(Material)
+    query = db.query(Material).filter(Material.is_active.is_(True))
     if q:
         keyword = f"%{q}%"
         query = query.filter(

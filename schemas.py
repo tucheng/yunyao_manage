@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from typing import Optional
 from datetime import datetime
 
@@ -21,6 +21,7 @@ class RecipeCreate(BaseModel):
     forked_from: Optional[int] = None
     glaze_colors: Optional[str] = None  # JSON: [{hex, r, g, b, name}]
     curve_id: Optional[int] = None
+    ingredients: list[dict] = Field(default_factory=list)
 
 
 class RecipeUpdate(BaseModel):
@@ -40,6 +41,7 @@ class RecipeUpdate(BaseModel):
     forked_from: Optional[int] = None
     glaze_colors: Optional[str] = None
     curve_id: Optional[int] = None
+    ingredients: Optional[list[dict]] = None
 
 class RecipeOut(BaseModel):
     id: int

@@ -20,6 +20,13 @@ while true; do
       echo "object backup failed: $bucket" >&2
     fi
   done
-  find /backups/objects -mindepth 1 -maxdepth 1 -type d -mtime "+$BACKUP_RETENTION_DAYS" -exec rm -rf {} +
+  cutoff_epoch="$(date -u -d "$BACKUP_RETENTION_DAYS days ago" +%s)"
+  for backup_path in /backups/objects/*; do
+    [ -d "$backup_path" ] || continue
+    modified_epoch="$(stat -c %Y "$backup_path")"
+    if [ "$modified_epoch" -lt "$cutoff_epoch" ]; then
+      rm -rf "$backup_path"
+    fi
+  done
   sleep "$BACKUP_INTERVAL_SECONDS"
 done

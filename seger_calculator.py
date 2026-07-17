@@ -11,10 +11,10 @@ import logging
 import re
 from datetime import datetime, timezone
 
-from sqlalchemy import func
 from sqlalchemy.orm import Session
 from security import decrypt
 from models import RecipeIngredient, Material, RecipeSeger, Recipe
+from services.material_analysis import resolve_material
 
 logger = logging.getLogger('yunyao')
 
@@ -332,7 +332,7 @@ def _format_seger_unified(
     return f"{ro_str} : {al2o3_str} : {sio2_str}"
 
 
-def _empty_seger_result(reason: str = ""):
+def _empty_seger_result(reason: str = "", status: str = "failed"):
     """Return a dict representing an empty / failed Seger calculation."""
     return {
         'seger_unified': '',
@@ -347,6 +347,8 @@ def _empty_seger_result(reason: str = ""):
         'color_analysis': {"hints": []},
         'oxide_contributions': {},
         'seger_detail': json.dumps({}, ensure_ascii=False),
+        'calculation_status': status,
+        'calculation_message': reason,
         'calculated_at': datetime.now(timezone.utc),
     }
 
@@ -370,6 +372,8 @@ def _save_seger(db: Session, recipe_id: int, data: dict) -> None:
         existing.acid_base_ratio = data['acid_base_ratio']
         existing.acid_base_note = data['acid_base_note']
         existing.seger_detail = data['seger_detail']
+        existing.calculation_status = data.get('calculation_status', 'complete')
+        existing.calculation_message = data.get('calculation_message')
         existing.calculated_at = data['calculated_at']
     else:
         seger = RecipeSeger(
@@ -381,15 +385,17 @@ def _save_seger(db: Session, recipe_id: int, data: dict) -> None:
             acid_base_ratio=data['acid_base_ratio'],
             acid_base_note=data['acid_base_note'],
             seger_detail=data['seger_detail'],
+            calculation_status=data.get('calculation_status', 'complete'),
+            calculation_message=data.get('calculation_message'),
             calculated_at=data['calculated_at'],
         )
         db.add(seger)
     db.commit()
 
 
-def _save_seger_empty(db: Session, recipe_id: int, reason: str) -> dict:
+def _save_seger_empty(db: Session, recipe_id: int, reason: str, status: str = "failed") -> dict:
     """Save a placeholder empty result and return it."""
-    data = _empty_seger_result(reason)
+    data = _empty_seger_result(reason, status=status)
     _save_seger(db, recipe_id, data)
     return data
 
@@ -458,6 +464,7 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
         ingredient_data.append({
             'name': decrypted_name,
             'name_en': (ing.name_en or "").strip(),
+            'material_id': ing.material_id,
             'amount': amount_val,
             'unit': (ing.unit or "").strip().lower(),
             'is_additional': ing.is_additional,
@@ -484,27 +491,10 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
     included_additional = []
     found_no_oxides = []
 
-    # Build a whitespace-insensitive lookup once per calculation. Historical
-    # duplicate rows are retained, so their previous preference (higher SiO2,
-    # then source) remains deterministic while newly written names are unique.
-    catalog = (
-        db.query(Material)
-        .order_by(
-            func.coalesce(Material.sio2, 0).desc(),
-            Material.source.desc(),
-            Material.id,
-        )
-        .all()
-    )
-    materials_by_name = {}
-    materials_by_name_en = {}
-    for catalog_material in catalog:
-        name_key = _normalized_material_name(catalog_material.name)
-        if name_key:
-            materials_by_name.setdefault(name_key, catalog_material)
-        name_en_key = _normalized_material_name(catalog_material.name_en)
-        if name_en_key:
-            materials_by_name_en.setdefault(name_en_key, catalog_material)
+    materials_by_id = {
+        material.id: material for material in db.query(Material).filter(Material.is_active.is_(True)).all()
+    }
+    pending_materials = []
 
     for d in ingredient_data:
         name = d['name']
@@ -519,22 +509,28 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
         material = None
         matched_by = ""
 
-        # a) decrypted name → materials.name (忽略全部空白字符)
-        name_clean = _normalized_material_name(name)
-        material = materials_by_name.get(name_clean)
-        if material:
-            matched_by = f"materials.name='{name}'"
-
-        # b) name_en → materials.name_en (忽略全部空白字符)
-        if not material and name_en:
-            name_en_clean = _normalized_material_name(name_en)
-            material = materials_by_name_en.get(name_en_clean)
+        if d.get('material_id'):
+            material = materials_by_id.get(d['material_id'])
             if material:
-                matched_by = f"materials.name_en='{name_en}'"
+                matched_by = f"recipe_ingredients.material_id={material.id}"
+
+        # Historical rows without an explicit link use the reviewed family
+        # default. Ambiguous duplicate groups are intentionally not guessed.
+        if not material:
+            material, _ = resolve_material(
+                db, name=name, name_en=name_en, create_missing=False,
+            )
+            if material:
+                matched_by = f"material_family.default={material.id}"
 
         if not material:
             unmatched_names.append(name)
             logger.warning("No material found for ingredient '%s'", name)
+            continue
+
+        if material.status != 'recalculated' or material.data_quality_status in ('disabled', 'merged'):
+            pending_materials.append(name)
+            logger.info("Material '%s' is pending review and was excluded", name)
             continue
 
         # --- Calculate oxide moles ---
@@ -568,9 +564,14 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
 
     # ----- 5. Guard: no calculable oxides ----------------------------------
     if all(v == 0 for v in oxide_moles_total.values()):
+        pending_reason = "；".join(filter(None, [
+            "材料待管理员审核：" + "、".join(dict.fromkeys(pending_materials)) if pending_materials else "",
+            "材料无法唯一匹配：" + "、".join(dict.fromkeys(unmatched_names)) if unmatched_names else "",
+        ]))
         return _save_seger_empty(
             db, recipe_id,
-            "无法计算氧化物摩尔数：未匹配到任何含有氧化物数据的材料",
+            pending_reason or "无法计算氧化物摩尔数：未匹配到任何含有氧化物数据的材料",
+            status="pending_material" if pending_reason else "failed",
         )
 
     # ----- 6. Group & normalise --------------------------------------------
@@ -619,6 +620,7 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
         'norm_factor': round(norm_factor, 6),
         'ingredient_details': ingredient_details,
         'unmatched': unmatched_names,
+        'pending_materials': pending_materials,
         'included_additional': included_additional,
         'found_no_oxides': found_no_oxides,
         'total_grams': round(total_raw, 2),
@@ -645,6 +647,11 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
         'color_analysis': color_analysis,
         'oxide_contributions': oxide_contributions,
         'seger_detail': json.dumps(seger_detail, ensure_ascii=False),
+        'calculation_status': 'pending_material' if (unmatched_names or pending_materials) else 'complete',
+        'calculation_message': (
+            "部分材料待审核或无法唯一匹配，当前结果不完整"
+            if (unmatched_names or pending_materials) else None
+        ),
         'calculated_at': datetime.now(timezone.utc),
     }
 

@@ -143,7 +143,7 @@ def get_recipe(
 def _parse_seger_detail(detail_json: str) -> dict:
     """Parse seger_detail JSON and extract summary fields."""
     if not detail_json or detail_json == "{}":
-        return {"unmatched": [], "included_additional": [], "found_no_oxides": [],
+        return {"unmatched": [], "pending_materials": [], "included_additional": [], "found_no_oxides": [],
                 "surface_prediction": {"surface": "", "note": ""},
                 "firing_temp": {"cone": "", "temp_range": "", "note": ""},
                 "thermal_expansion": {"na_k_ratio": 0, "details": []},
@@ -153,6 +153,7 @@ def _parse_seger_detail(detail_json: str) -> dict:
         detail = json.loads(detail_json)
         return {
             "unmatched": detail.get("unmatched", []),
+            "pending_materials": detail.get("pending_materials", []),
             # Older saved calculations used a misleading key name even though
             # additives were included in the oxide accumulation.
             "included_additional": detail.get(
@@ -166,7 +167,7 @@ def _parse_seger_detail(detail_json: str) -> dict:
             "oxide_contributions": detail.get("oxide_contributions", {}),
         }
     except (json.JSONDecodeError, TypeError):
-        return {"unmatched": [], "included_additional": [], "found_no_oxides": [],
+        return {"unmatched": [], "pending_materials": [], "included_additional": [], "found_no_oxides": [],
                 "surface_prediction": {"surface": "", "note": ""},
                 "firing_temp": {"cone": "", "temp_range": "", "note": ""},
                 "thermal_expansion": {"na_k_ratio": 0, "details": []},
@@ -195,6 +196,8 @@ def get_recipe_seger(recipe_id: int, request: Request, db: Session = Depends(get
             "acid_base_ratio": None,
             "acid_base_note": "",
             "seger_detail": "{}",
+            "calculation_status": "pending_material",
+            "calculation_message": "尚未生成釉料分析",
             "calculated_at": None,
             **detail_info,
         }
@@ -208,6 +211,8 @@ def get_recipe_seger(recipe_id: int, request: Request, db: Session = Depends(get
         "acid_base_ratio": seger.acid_base_ratio,
         "acid_base_note": seger.acid_base_note,
         "seger_detail": seger.seger_detail,
+        "calculation_status": seger.calculation_status,
+        "calculation_message": seger.calculation_message,
         "calculated_at": seger.calculated_at.isoformat() if seger.calculated_at else None,
         **detail_info,
     }

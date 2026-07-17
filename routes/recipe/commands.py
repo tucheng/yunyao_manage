@@ -14,6 +14,7 @@ from seger_calculator import calculate_seger
 from services.recipe_access import require_recipe_owner
 from services.recipe_number import generate_recipe_no
 from services.recipe_version import snapshot_recipe
+from services.recipe_ingredient_writer import replace_recipe_ingredients
 
 logger = logging.getLogger('yunyao')
 
@@ -89,6 +90,9 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         curve_id=_owned_curve_id(db, recipe.curve_id, user_id),
     )
     db.add(db_recipe)
+    db.flush()
+    if recipe.ingredients:
+        replace_recipe_ingredients(db, db_recipe, recipe.ingredients, created_from="frontend")
     db.commit()
     db.refresh(db_recipe)
     if recipe.work_id:
@@ -96,12 +100,12 @@ def create_recipe(recipe: RecipeCreate, user_id: int = Query(...), db: Session =
         if work and work.user_id == user_id:
             work.recipe_id = db_recipe.id
             db.commit()
-    # Trigger Seger formula calculation
-    try:
-        calculate_seger(db_recipe.id, db)
-        logger.info("Seger calculation completed for recipe %s", db_recipe.id)
-    except Exception as e:
-        logger.error("Seger calculation failed for recipe %s: %s", db_recipe.id, e)
+    if recipe.ingredients:
+        try:
+            calculate_seger(db_recipe.id, db)
+            logger.info("Seger calculation completed for recipe %s", db_recipe.id)
+        except Exception as e:
+            logger.error("Seger calculation failed for recipe %s: %s", db_recipe.id, e)
     return db_recipe
 
 
@@ -126,6 +130,7 @@ def update_recipe(
     snapshot_recipe(recipe_id, db, note="编辑配方信息", user_id=user_id)
 
     update_data = recipe.model_dump(exclude_unset=True)
+    ingredients = update_data.pop("ingredients", None)
     if "curve_id" in update_data:
         update_data["curve_id"] = _owned_curve_id(db, update_data["curve_id"], user_id)
     if "cover" in update_data or "images" in update_data:
@@ -162,15 +167,17 @@ def update_recipe(
             pass  # keep original value
     for key, value in update_data.items():
         setattr(db_recipe, key, value)
+    if ingredients is not None:
+        replace_recipe_ingredients(db, db_recipe, ingredients, created_from=db_recipe.source or "frontend")
     db_recipe.updated_at = func.now()
     db.commit()
     db.refresh(db_recipe)
-    # Trigger Seger formula calculation
-    try:
-        calculate_seger(db_recipe.id, db)
-        logger.info("Seger calculation completed for recipe %s", db_recipe.id)
-    except Exception as e:
-        logger.error("Seger calculation failed for recipe %s: %s", db_recipe.id, e)
+    if ingredients is not None:
+        try:
+            calculate_seger(db_recipe.id, db)
+            logger.info("Seger calculation completed for recipe %s", db_recipe.id)
+        except Exception as e:
+            logger.error("Seger calculation failed for recipe %s: %s", db_recipe.id, e)
     return db_recipe
 
 

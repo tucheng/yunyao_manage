@@ -29,6 +29,7 @@ DEFAULT_WORK_ATTRIBUTES = {
     "type": ["透明釉", "单色釉", "立体釉", "复合釉", "釉下彩", "釉上彩", "其他"],
     "body_material": ["高白泥", "黑陶泥", "紫砂泥", "瓷泥", "陶泥", "粗陶", "红陶", "瓦胎"],
     "kiln_type": ["电窑", "气窑", "柴窑", "乐烧"],
+    "atmosphere": ["氧化", "还原", "中性"],
     "surface": ["亮光", "丝光", "蜡光", "柔光", "无光", "磨砂"],
     "transparency": ["高透", "微透", "半透", "不透"],
 }
@@ -81,12 +82,15 @@ DEFAULT_COLOR_RANGES = [
 
 
 def init_work_attributes(db) -> int:
-    """初始化作品属性可选值，已有则跳过"""
-    count = db.query(WorkAttributeOption).count()
-    if count > 0:
-        return 0
+    """补齐作品属性默认选项，保留后台已有配置。"""
+    existing_categories = {
+        category
+        for category, in db.query(WorkAttributeOption.category).distinct().all()
+    }
     total = 0
     for cat, values in DEFAULT_WORK_ATTRIBUTES.items():
+        if cat in existing_categories:
+            continue
         for i, v in enumerate(values):
             db.add(WorkAttributeOption(category=cat, value=v, sort_order=i))
             total += 1

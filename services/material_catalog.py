@@ -1,10 +1,10 @@
 import math
-import re
 
 from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
 
 from models import Material
+from services.material_analysis import normalize_material_name
 
 MOLECULE_FLOAT_FIELDS = (
     "sio2", "al2o3", "fe2o3", "tio2", "cao", "mgo", "na2o", "k2o",
@@ -16,11 +16,13 @@ MOLECULE_TEXT_FIELDS = ("name_en", "formula", "molecular_weight", "category")
 
 def catalog_payload(material: Material) -> dict:
     fields = (
-        "id", "name", "name_en", "source", "source_id", "formula",
+        "id", "family_id", "name", "normalized_name", "variant_name", "name_en", "source", "source_id", "formula",
         "molecular_weight", "category", "sio2", "al2o3", "fe2o3", "tio2",
         "cao", "mgo", "na2o", "k2o", "zno", "b2o3", "p2o5", "li2o",
         "mno2", "coo", "sno2", "cuo", "cr2o3", "pbo", "bao", "sro",
-        "loi", "thermal_expansion",
+        "loi", "thermal_expansion", "status", "created_from", "is_active",
+        "merged_into_id", "data_quality_status", "submitted_at", "reviewed_at",
+        "review_note", "recalculated_at",
     )
     result = {field: getattr(material, field, None) for field in fields}
     for field in ("name_en", "source", "formula", "molecular_weight", "category"):
@@ -38,7 +40,7 @@ def request_user_id(request: Request) -> int:
 
 
 def normalized_material_name(name: str) -> str:
-    return re.sub(r"\s+", "", str(name or ""))
+    return normalize_material_name(name)
 
 
 def material_name_conflict(db: Session, name: str, exclude_id: int | None = None) -> Material | None:

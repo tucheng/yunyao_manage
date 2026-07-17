@@ -1,5 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
-from sqlalchemy import text, func
+from sqlalchemy import text
 from sqlalchemy.orm import Session
 from database import get_db
 from auth_utils import current_user, user_id_from_request
@@ -7,6 +7,7 @@ from models import RecipeIngredient, Recipe, IngredientName, Material, User
 from schemas import RecipeIngredientOut
 from security import encrypt, decrypt, hash_for_lookup
 from seger_calculator import calculate_seger
+from services.material_analysis import resolve_material, resolve_recipe_ingredients
 import logging
 
 logger = logging.getLogger('yunyao')
@@ -55,15 +56,10 @@ def get_ingredients(recipe_id: int, request: Request, db: Session = Depends(get_
         # plaintext here keeps reads available without weakening malformed
         # Fernet-token handling in security.decrypt.
         decrypted_name = decrypt(row.name, allow_plaintext=True)
-        # 查找材料库中的匹配ID
-        mat = None
-        if decrypted_name:
-            name_clean = decrypted_name.replace(' ', '')
-            mat = (
-                db.query(Material)
-                .filter(func.replace(Material.name, ' ', '') == name_clean)
-                .order_by(Material.source.desc())
-                .first()
+        mat = db.query(Material).filter(Material.id == row.material_id).first() if row.material_id else None
+        if not mat and decrypted_name:
+            mat, _ = resolve_material(
+                db, name=decrypted_name, name_en=row.name_en or "", create_missing=False,
             )
         result.append(RecipeIngredientOut(
             id=row.id,
@@ -127,7 +123,17 @@ def save_ingredients(
     for name in all_names:
         db.execute(text("INSERT IGNORE INTO ingredient_names (name) VALUES (:name)"), {"name": name})
 
+    db.flush()
+    resolution = resolve_recipe_ingredients(
+        db,
+        recipe_id,
+        owner_user_id=recipe.user_id,
+        created_from=recipe.source or "frontend",
+        create_missing=True,
+    )
     db.commit()
+    if resolution["created"]:
+        logger.info("Created %s missing materials for recipe %s", len(resolution["created"]), recipe_id)
 
     # Trigger Seger formula recalculation after ingredients change
     try:
@@ -157,5 +163,6 @@ def save_ingredients(
             note=row.note,
             is_additional=row.is_additional,
             sort_order=row.sort_order,
+            material_id=row.material_id,
         ))
     return result

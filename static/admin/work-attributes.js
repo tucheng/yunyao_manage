@@ -1,5 +1,5 @@
 window.ATTR_CATEGORIES = {
-  type: '类型', body_material: '底坯', kiln_type: '烧制方式', surface: '釉面质感', transparency: '透明度'
+  type: '类型', body_material: '底坯', kiln_type: '烧制方式', atmosphere: '气氛', surface: '釉面质感', transparency: '透明度'
 };
 window.attrData = {};
 window.activeAttrCategory = 'type';

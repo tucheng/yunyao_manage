@@ -1,12 +1,12 @@
 from fastapi import APIRouter, Depends, HTTPException, Query, Request
 from sqlalchemy.orm import Session
 from database import get_db
-from models import Recipe, RecipeIngredient, RecipeVersion
-from security import encrypt, hash_for_lookup
+from models import Recipe, RecipeVersion
 from auth_utils import current_user, user_id_from_request
 from services.recipe_access import require_recipe_owner
 from sqlalchemy import func
 from seger_calculator import calculate_seger
+from services.recipe_ingredient_writer import replace_recipe_ingredients
 from services.recipe_version import snapshot_recipe
 import json
 import logging
@@ -93,23 +93,8 @@ def restore_recipe_version(
     db.flush()
 
     # 恢复 ingredients
-    db.query(RecipeIngredient).filter(RecipeIngredient.recipe_id == recipe_id).delete()
     ing_list = json.loads(version.ingredients_data)
-    for i, item in enumerate(ing_list):
-        raw_name = (item.get("name") or "").strip()
-        ing = RecipeIngredient(
-            recipe_id=recipe_id,
-            recipe_no=recipe.recipe_no or "",
-            name=encrypt(raw_name),
-            name_en=(item.get("name_en") or "").strip(),
-            name_hash=hash_for_lookup(raw_name),
-            amount=encrypt(str(item.get("amount") or "").strip()),
-            unit=str(item.get("unit") or "").strip()[:20],
-            note=item.get("note") or "",
-            is_additional=1 if item.get("is_additional") else 0,
-            sort_order=item.get("sort_order", i),
-        )
-        db.add(ing)
+    replace_recipe_ingredients(db, recipe, ing_list, created_from=recipe.source or "frontend")
     db.commit()
 
     # 重新计算 Seger
