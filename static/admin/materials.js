@@ -9,8 +9,8 @@ window.OXIDE_NAMES = [
 window.materialPage = 1;
 window.lastMaterialData = [];
 
-window.materialStatusText = function(status) {
-  return { initial: '初始', submitted: '已提交', recalculated: '已重新计算' }[status] || status || '初始';
+window.materialStatusText = function(status, affectedCount) {
+  return { initial: '初始', modified: '已修改', submitted: '已提交', recalculated: '已审核' }[status] || status || '初始';
 };
 
 window.loadMaterials = function() {
@@ -25,16 +25,17 @@ window.loadMaterials = function() {
     var tbody = document.getElementById('materialTableBody');
     tbody.innerHTML = list.length ? list.map(function(m) {
       var owner = m.owner ? esc(m.owner.name || ('用户 ' + m.owner.id)) : '-';
-      var statusClass = m.status === 'submitted' ? 'badge-danger' : (m.status === 'recalculated' ? 'badge-overseas' : 'badge-neutral');
+      var statusClass = m.status === 'submitted' ? 'badge-danger' : (m.status === 'recalculated' ? 'badge-reviewed' : 'badge-neutral');
       return '<tr>' +
         '<td>' + m.id + '</td>' +
         '<td><strong>' + esc(m.name || '-') + '</strong><br><small>' + esc(m.name_en || '-') + '</small></td>' +
-        '<td><span class="badge ' + statusClass + '">' + window.materialStatusText(m.status) + '</span></td>' +
+        '<td><span class="badge ' + statusClass + '">' + window.materialStatusText(m.status, m.affected_recipe_count || 0) + '</span></td>' +
         '<td><button class="btn btn-sm" onclick="window.showMaterialAffectedRecipes(' + m.id + ')">' + (m.affected_recipe_count || 0) + '</button></td>' +
         '<td>' + owner + '</td>' +
         '<td>' +
           '<button class="btn btn-sm" onclick="window.editMaterial(' + m.id + ')">编辑</button> ' +
-          '<button class="btn btn-sm btn-primary" onclick="window.recalculateMaterial(' + m.id + ')">重新算 Seger</button> ' +
+          ((m.status === 'modified' || m.status === 'recalculated' || (m.affected_recipe_count || 0) > 0) ? '<button class="btn btn-sm btn-primary" onclick="window.recalculateMaterial(' + m.id + ')">重新算 Seger</button> ' : '') +
+          ((m.affected_recipe_count || 0) === 0 && m.status === 'submitted' ? '<button class="btn btn-sm btn-primary" onclick="window.reviewMaterial(' + m.id + ')">审核</button> ' : '') +
           '<button class="btn btn-sm btn-danger" onclick="window.deleteMaterial(' + m.id + ',' + (m.affected_recipe_count || 0) + ')">删除</button>' +
         '</td></tr>';
     }).join('') : '<tr><td colspan="6" style="text-align:center;color:#999;padding:30px">暂无材料数据</td></tr>';
@@ -81,7 +82,7 @@ window.saveMaterial = function(id) {
     body[pair[1]] = raw === '' ? null : Number(raw);
   });
   api('/admin/materials/' + id, { method: 'PUT', body: JSON.stringify(body) }).then(function() {
-    toast('材料已保存，状态已恢复为初始');
+    toast('材料已保存，状态已更新为已修改');
     closeModal('subModal');
     window.loadMaterials();
   }).catch(function(e) { toast(e.message || '保存失败', 'error'); });
@@ -94,6 +95,14 @@ window.recalculateMaterial = function(id) {
     toast('重算完成：成功 ' + (r.succeeded || 0) + '，失败 ' + (r.failed || 0));
     window.loadMaterials();
   }).catch(function(e) { toast(e.message || '重算失败', 'error'); });
+};
+
+window.reviewMaterial = function(id) {
+  if (!confirm('该材料暂无关联配方，确认审核通过并允许其参与后续釉料分析？')) return;
+  api('/admin/materials/' + id + '/recalculate', { method: 'POST', body: JSON.stringify({}) }).then(function() {
+    toast('材料已审核');
+    window.loadMaterials();
+  }).catch(function(e) { toast(e.message || '审核失败', 'error'); });
 };
 
 window.deleteMaterial = function(id, affectedCount) {

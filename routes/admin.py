@@ -461,7 +461,7 @@ def admin_list_materials(
         if material.user_id:
             owner = {
                 "id": material.user_id,
-                "name": db.query(User.nickname).filter(User.id == material.user_id).scalar() or "",
+                "name": db.query(User.username).filter(User.id == material.user_id).scalar() or "",
             }
         data.append({
             **catalog_payload(material),
@@ -495,7 +495,7 @@ def admin_update_material(
     for field, value in cleaned.items():
         setattr(material, field, value)
     prepare_material(db, material)
-    material.status = "initial"
+    material.status = "modified"
     material.submitted_at = None
     material.recalculated_at = None
     material.review_note = None

@@ -1,10 +1,32 @@
-<div class="card">
+<style>
+.material-admin-card { padding: 12px; margin-bottom: 10px; }
+.material-admin-card h2 { margin-bottom: 8px; }
+.material-admin-card .search-bar { margin-bottom: 0; gap: 6px; }
+.material-table-wrap { overflow-x: auto; }
+.material-table { min-width: 700px; font-size: 12px; }
+.material-table th, .material-table td { padding: 6px 7px; line-height: 1.25; }
+.material-table .btn-sm { padding: 3px 6px; border-radius: 5px; font-size: 11px; white-space: nowrap; }
+.material-table .badge { padding: 2px 6px; font-size: 11px; white-space: nowrap; }
+.material-table td:last-child { white-space: nowrap; }
+.badge-reviewed { background: #e7ebee; color: #53616b; }
+@media (max-width: 600px) {
+  .material-admin-card { padding: 8px; border-radius: 7px; }
+  .material-admin-card .search-bar { flex-wrap: wrap; }
+  .material-admin-card .search-bar input { min-width: 150px; padding: 6px 8px; font-size: 12px; }
+  .material-admin-card .search-bar select, .material-admin-card .search-bar .btn { padding: 5px 7px; font-size: 11px; }
+  .material-table { min-width: 650px; }
+  .material-table th, .material-table td { padding: 5px 6px; }
+}
+</style>
+
+<div class="card material-admin-card">
   <h2>材料管理</h2>
   <div class="search-bar">
     <input type="text" id="materialSearch" placeholder="搜索中文名或英文名" onkeydown="if(event.key==='Enter'){window.materialPage=1;window.loadMaterials()}">
     <select id="materialStatus" onchange="window.materialPage=1;window.loadMaterials()">
       <option value="">全部状态</option>
       <option value="initial">初始</option>
+      <option value="modified">已修改</option>
       <option value="submitted">已提交</option>
       <option value="recalculated">已重新计算</option>
     </select>
@@ -13,12 +35,13 @@
   </div>
 </div>
 
-<div class="card">
+<div class="card material-admin-card">
   <div class="config-toolbar">
     <h2 style="margin:0">材料列表</h2>
     <button class="btn btn-sm" onclick="window.loadMaterials()">刷新</button>
   </div>
-  <table>
+  <div class="material-table-wrap">
+  <table class="material-table">
     <thead>
       <tr>
         <th>ID</th>
@@ -31,5 +54,6 @@
     </thead>
     <tbody id="materialTableBody"></tbody>
   </table>
+  </div>
   <div class="pagination" id="materialPagination"></div>
 </div>

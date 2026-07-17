@@ -26,6 +26,24 @@ from services.material_analysis import prepare_material
 
 router = APIRouter(prefix="/materials", tags=["材料库"])
 
+OXIDE_FIELDS = (
+    "sio2", "al2o3", "fe2o3", "tio2", "cao", "mgo", "na2o", "k2o",
+    "zno", "b2o3", "p2o5", "li2o", "mno2", "coo", "sno2", "cuo",
+    "cr2o3", "pbo", "bao", "sro",
+)
+
+
+def _has_oxide_data(values) -> bool:
+    """Only a positive oxide percentage counts as usable molecule data."""
+    get_value = values.get if isinstance(values, dict) else lambda field: getattr(values, field, None)
+    for field in OXIDE_FIELDS:
+        try:
+            if float(get_value(field) or 0) > 0:
+                return True
+        except (TypeError, ValueError):
+            continue
+    return False
+
 
 def _molecule_payload(db: Session, material: Material) -> dict:
     result = _catalog_payload(material)
@@ -69,6 +87,8 @@ def list_my_material_molecules(
 def create_material_molecule(data: dict, request: Request, db: Session = Depends(get_db)):
     user_id = _request_user_id(request)
     cleaned = _clean_molecule_data(data)
+    if not _has_oxide_data(cleaned):
+        raise HTTPException(status_code=400, detail="至少填写一种有效氧化物后才能保存")
     if _material_name_conflict(db, cleaned["name"], cleaned.get("name_en", "")):
         raise HTTPException(status_code=409, detail="中英文材料名组合已存在（忽略空白）")
     material = Material(
@@ -112,8 +132,10 @@ def update_material_molecule(
         raise HTTPException(status_code=409, detail="中英文材料名组合已存在（忽略空白）")
     for field, value in cleaned.items():
         setattr(material, field, value)
+    if not _has_oxide_data(material):
+        raise HTTPException(status_code=400, detail="至少填写一种有效氧化物后才能保存")
     prepare_material(db, material)
-    material.status = "initial"
+    material.status = "modified"
     material.submitted_at = None
     material.review_note = None
     db.commit()
@@ -127,13 +149,9 @@ def submit_material_molecule(material_id: int, request: Request, db: Session = D
     material = db.query(Material).filter(Material.id == material_id, Material.user_id == user_id).first()
     if not material:
         raise HTTPException(status_code=404, detail="材料不存在或无权提交")
-    if material.status != "initial":
+    if material.status not in ("initial", "modified"):
         raise HTTPException(status_code=409, detail="当前状态不能重复提交")
-    if not any(getattr(material, field, None) not in (None, "", 0, 0.0) for field in (
-        "sio2", "al2o3", "fe2o3", "tio2", "cao", "mgo", "na2o", "k2o",
-        "zno", "b2o3", "p2o5", "li2o", "mno2", "coo", "sno2", "cuo",
-        "cr2o3", "pbo", "bao", "sro",
-    )):
+    if not _has_oxide_data(material):
         raise HTTPException(status_code=400, detail="至少填写一种有效氧化物后才能提交")
     material.status = "submitted"
     material.submitted_at = datetime.now(timezone.utc)

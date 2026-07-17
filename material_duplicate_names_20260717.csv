@@ -1,0 +1,249 @@
+duplicate_group,id,name,name_en
+1,62,氧化铝,Alumina
+1,1578,氧化铝,Alumina
+2,63,水合氧化铝,Alumina Hydrate
+2,503,水合氧化铝,Alumina Hydrate
+3,86,巴纳德滑条,Barnard Slip
+3,493,巴纳德滑条,Barnard Slip
+4,87,玄武岩,Basalt
+4,523,玄武岩,Basalt
+4,1963,玄武岩,Basalt
+5,89,膨润土,Bentonite
+5,1328,膨润土,Bentonite
+6,93,骨灰,Bone Ash
+6,609,骨灰,Bone Ash
+7,96,硼酸,Boric Acid
+7,2255,硼酸,Boric Acid
+8,103,硼酸钙,Calcium Borate
+8,784,硼酸钙,Calcium Borate
+8,1558,硼酸钙,Calcium Borate
+9,127,白云石,Dolomite
+9,871,白云石,Dolomite
+10,132,萤石,Fluorspar
+10,1444,萤石,Fluorspar
+11,133,Foundry Hill 奶油,Foundry Hill Creme
+11,544,Foundry Hill 奶油,Foundry Hill Creme
+11,2134,Foundry Hill 奶油,Foundry Hill Creme
+12,136,Ferro熔块3124,Ferro Frit 3124
+12,1440,Ferro熔块 3124,Ferro Frit 3124
+13,137,Ferro熔块3134,Ferro Frit 3134
+13,619,Ferro熔块 3134,Ferro Frit 3134
+14,138,熔块 3185,Frit 3185
+14,766,熔块 3185,Frit 3185
+15,141,Ferro熔块 3269,Ferro Frit 3269
+15,372,Ferro熔块 3269,Ferro Frit 3269
+16,174,Glomax LL 煅烧高岭土,Glomax LL Calcined Kaolin
+16,3340,Glomax LL 煅烧高岭土,Glomax LL Calcined Kaolin
+17,176,戈尔达特,Goldart
+17,529,戈尔达特,Goldart
+18,189,赫尔默高岭土,Helmer Kaolin
+18,498,赫尔默高岭土,Helmer Kaolin
+18,543,赫尔默高岭土,Helmer Kaolin
+18,1589,赫尔默高岭土,Helmer Kaolin
+19,199,高岭土,Kaolin
+19,1762,高岭土,Kaolin
+20,201,乔治亚高岭土,Georgia Kaolin
+20,1505,乔治亚高岭土,Georgia Kaolin
+21,210,蓝晶石,Kyanite
+21,1459,蓝晶石,Kyanite
+21,3281,蓝晶石,Kyanite
+21,3427,蓝晶石,Kyanite
+22,216,锂云母,Lepidolite
+22,1869,锂云母,Lepidolite
+23,220,莉泽拉·克莱,Lizella Clay
+23,631,莉泽拉·克莱,Lizella Clay
+24,227,二氧化锰,Manganese Dioxide
+24,802,二氧化锰,Manganese Dioxide
+25,230,摩洛石,Molochite
+25,1504,摩洛石,Molochite
+25,2735,摩洛石,Molochite
+26,232,莫来石,Mullite
+26,2526,莫来石,Mullite
+26,3280,莫来石,Mullite
+27,237,碳酸镍,Nickel Carbonate
+27,1425,碳酸镍,Nickel Carbonate
+28,241,奥克马尔吉红粘土,Ocmulgee Red Clay
+28,1461,奥克马尔吉红粘土,Ocmulgee Red Clay
+29,246,珍珠灰,Pearl Ash
+29,1568,珍珠灰,Pearl Ash
+30,249,透锂长石,Petalite
+30,1545,透锂长石,Petalite
+31,256,钾长石,Potash Feldspar
+31,536,钾长石,Potash Feldspar
+31,804,钾长石,Potash Feldspar
+31,1384,钾长石,Potash Feldspar
+32,259,叶蜡石,Pyrophyllite
+32,1040,叶蜡石,Pyrophyllite
+32,1680,叶蜡石,Pyrophyllite
+33,275,二氧化硅,Silica
+33,1775,二氧化硅,Silica
+34,290,滑石粉,Talc
+34,873,滑石粉,Talc
+35,291,田纳西州#1 SGP 球粘土,Tennessee #1 SGP Ball Clay
+35,715,田纳西州#1 SGP 球粘土,Tennessee #1 SGP Ball Clay
+36,314,氧化锌,Zinc Oxide
+36,646,氧化锌,Zinc Oxide
+37,325,林肯 60 耐火粘土,Lincoln 60 Fireclay
+37,494,林肯 60 耐火粘土,Lincoln 60 Fireclay
+37,2759,林肯 60 耐火粘土,Lincoln 60 Fireclay
+38,328,陶艺工艺品熔块 P2960,PotteryCrafts Frit P2960
+38,1145,陶艺工艺品熔块 P2960,PotteryCrafts Frit P2960
+39,329,派拉克斯,Pyrax
+39,867,派拉克斯,Pyrax
+39,2376,派拉克斯,Pyrax
+39,2517,派拉克斯,Pyrax
+40,358,Ferro熔块 4110,Ferro Frit 4110
+40,843,Ferro熔块 4110,Ferro Frit 4110
+41,388,麦克纳米高岭土,McNamee Kaolin
+41,2533,麦克纳米高岭土,McNamee Kaolin
+42,389,熔块 F-493,Fusion Frit F-493
+42,1491,熔块 F-493,Fusion Frit F-493
+43,398,Hymod AT 球粘土,Hymod AT Ball Clay
+43,465,Hymod AT 球粘土,Hymod AT Ball Clay
+43,1617,Hymod AT 球粘土,Hymod AT Ball Clay
+44,411,白云石5/T,Dolomit 5/T
+44,1486,白云石5/T,Dolomit 5/T
+45,424,钠硼解石,Ulexite
+45,457,钠硼解石,Ulexite
+45,1179,钠硼解石,Ulexite
+45,2737,钠硼解石,Ulexite
+46,426,超级廷卡,Tinkar Super
+46,511,超级廷卡,Tinkar Super
+47,427,廷卡Z,Tinkar Z
+47,506,廷卡Z,Tinkar Z
+47,1327,廷卡Z,Tinkar Z
+47,1836,廷卡Z,Tinkar Z
+48,434,水,Water
+48,579,水,Water
+49,440,硅灰石 MM 81,Wollastonit MM 81
+49,1183,硅灰石 MM 81,Wollastonit MM 81
+50,447,G-200欧盟长石,G-200 EU Feldspar
+50,2418,G-200 欧盟长石,G-200 EU Feldspar
+51,458,盐舔,Salt Lick
+51,1081,盐舔,Salt Lick
+52,464,新铸造山奶油,New Foundry Hill Creme
+52,3123,新铸造山奶油,New Foundry Hill Creme
+53,483,梅森色料 6028 橙色,Mason Stain 6028 Orange
+53,1236,梅森色料 6028 橙色,Mason Stain 6028 Orange
+54,487,西班牙氧化铁红,Spanish Red Iron Oxide
+54,578,西班牙氧化铁红,Spanish Red Iron Oxide
+55,489,紫罗兰加,Zircopax Plus
+55,2683,紫罗兰加,Zircopax Plus
+56,502,赫尔玛高岭土,Helmar Kaolin
+56,1069,赫尔玛高岭土,Helmar Kaolin
+57,504,铬酸铁,Iron Chromate
+57,545,铬酸铁,Iron Chromate
+58,518,熔块 90158,Frit 90158
+58,1216,熔块 90158,Frit 90158
+59,521,纳瓦霍浮石,Navajo Pumice
+59,2229,纳瓦霍浮石,Navajo Pumice
+60,522,藏红花,Crocus Martis
+60,1392,藏红花,Crocus Martis
+60,2053,藏红花,Crocus Martis
+60,2281,藏红花,Crocus Martis
+61,532,绿条耐火粘土,Greenstripe Fireclay
+61,1798,绿条耐火粘土,Greenstripe Fireclay
+62,535,燧石,Flint
+62,1776,燧石,Flint
+62,2152,燧石,Flint
+63,647,碳酸钙,Calcium Carbonate
+63,680,碳酸钙,Calcium Carbonate
+63,2329,碳酸钙,Calcium Carbonate
+64,653,谈话22/香港,Talkum 22/HK
+64,974,谈话22/香港,Talkum 22/HK
+65,654,熔块 644,Frit 644
+65,789,熔块 644,Frit 644
+66,657,G200欧盟长石,G200 EU Feldspar
+66,3387,G200欧盟长石,G200 EU Feldspar
+67,672,Ferro熔块 4113,Ferro Frit 4113
+67,1314,Ferro熔块 4113,Ferro Frit 4113
+67,1818,Ferro熔块 4113,Ferro Frit 4113
+67,2210,Ferro熔块 4113,Ferro Frit 4113
+68,702,熔块 4108,Frit 4108
+68,1395,熔块 4108,Frit 4108
+69,704,熔块 4131,Frit 4131
+69,1250,熔块 4131,Frit 4131
+70,792,"光谱 45, S-4832","Нефелин-сиенит Spectrum 45, S-4832"
+70,2610,"光谱 45, S-4832","Нефелин-сиенит Spectrum 45, S-4832"
+71,812,熔块 M 1233,Fritte M 1233
+71,1070,熔块 M 1233,Fritte M 1233
+72,852,埃卡利特 1,Eckalite 1
+72,2151,埃卡利特 1,Eckalite 1
+73,869,碳酸镁,Magnesium Carbonate
+73,2338,碳酸镁,Magnesium Carbonate
+74,968,球粘土FX,Ball Clay FX
+74,1278,球粘土FX,Ball Clay FX
+75,995,硅砂,Silica Sand
+75,2465,硅砂,Silica Sand
+75,2513,硅砂,Silica Sand
+76,1043,碳酸钙,Whiting
+76,1561,碳酸钙,Whiting
+77,1082,派拉克斯 HS,Pyrax HS
+77,1091,派拉克斯 HS,Pyrax HS
+78,1122,高岭土233,Kaolin 233
+78,1254,高岭土233,Kaolin 233
+79,1123,乌莱西特,Ulexit
+79,2159,乌莱西特,Ulexit
+80,1162,Feldspath sodique (欣斯),Feldspath sodique (Hins)
+80,1943,Feldspath sodique (欣斯),Feldspath sodique (Hins)
+81,1163,熔块 1451,fritte 1451
+81,2261,熔块 1451,fritte 1451
+82,1172,熔块 F-69,Fusion Frit F-69
+82,1481,熔块 F-69,Fusion Frit F-69
+83,1385,中国粘土,China Clay
+83,2754,中国粘土,China Clay
+84,1401,高岭土 КЖФ-1,Каолин КЖФ-1
+84,2234,高岭土 КЖФ-1,Каолин КЖФ-1
+85,1449,平原人火粘土,Plainsman Fireclay
+85,2840,平原人火粘土,Plainsman Fireclay
+86,1462,锆石,Zirkonsilikat
+86,1910,锆石,Zirkonsilikat
+87,1468,硼酸锌,Zinc Borate
+87,3285,硼酸锌,Zinc Borate
+88,1482,熔块 F-413,Fusion Frit F-413
+88,2119,熔块 F-413,Fusion Frit F-413
+89,1511,PR-1000,PR-1000
+89,3048,PR-1000,PR-1000
+90,1523,库阿索·普罗德斯科,Cuarzo Prodesco
+90,1624,库阿索·普罗德斯科,Cuarzo Prodesco
+91,1573,煅烧棕土,Burnt Umber
+91,3429,煅烧棕土,Burnt Umber
+92,1634,霞石正长岩 Prodesco,Nefelina Sienita Prodesco
+92,2569,霞石正长岩 Prodesco,Nefelina Sienita Prodesco
+93,1662,熔块D90158钠硼硅酸盐,Фритта D 90158 NatriumBorSilikat
+93,1692,熔块D90158钠硼硅酸盐,Фритта D 90158 NatriumBorSilikat
+94,1671,Ferro熔块 4131,Ferro Frit 4131
+94,1783,Ferro熔块 4131,Ferro Frit 4131
+95,1688,M2红土,M2 Red Clay
+95,2093,M2红土,M2 Red Clay
+96,1725,煅烧阿尔伯塔泥浆,Roasted Alberta Slip
+96,1966,煅烧阿尔伯塔泥浆,Roasted Alberta Slip
+97,1748,中国砂,China sand
+97,2358,中国砂,China sand
+98,1796,Ferro熔块 4124,Ferro Frit 4124
+98,2457,Ferro熔块 4124,Ferro Frit 4124
+99,1962,SG919 拉古纳康沃尔潜艇,SG919 Laguna Cornwall Sub
+99,2694,SG919 拉古纳康沃尔潜艇,SG919 Laguna Cornwall Sub
+100,2105,磷矿,Phosphorite
+100,2171,磷矿,Phosphorite
+101,2295,硅胶 (C&F 2023),Silice (C&F 2023)
+101,2309,硅胶 (C&F2023),Silice (C&F2023)
+102,2344,熔块 5301,Frit 5301
+102,2788,熔块 5301,Frit 5301
+102,3341,熔块 5301,Frit 5301
+103,2355,稻壳灰,Rice Hull Ash
+103,3284,稻壳灰,Rice Hull Ash
+104,2563,G-200 欧盟,G-200 EU
+104,3158,G-200 欧盟,G-200 EU
+105,2591,BSZ高岭土,BSZ Kaolin
+105,2698,BSZ高岭土,BSZ Kaolin
+106,2606,BSZ 菲尔德斯帕特卡利 LIS 75,BSZ Feldspat Kali LIS 75
+106,3142,BSZ 菲尔德斯帕特卡利 LIS 75,BSZ Feldspat Kali LIS 75
+107,2766,Luzenac 滑石粉 (CERADEL 2024),Talc Luzenac (CERADEL 2024)
+107,2832,Luzenac 滑石粉 (CERADEL 2024),Talc Luzenac (CERADEL 2024)
+108,2808,蛋壳,Eggshell
+108,3282,蛋壳,Eggshell
+109,2884,GS24 红色色料,GS24 Red stain
+109,2885,GS24 红色色料,GS24  Red stain
+110,3291,熔块 F-19,Fusion Frit F-19
+110,3400,熔块 F-19,Fusion Frit F-19
