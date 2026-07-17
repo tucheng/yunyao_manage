@@ -1,37 +1,31 @@
 <div class="card">
-  <h2>材料搜索</h2>
+  <h2>材料管理</h2>
   <div class="search-bar">
-    <input type="text" id="materialSearch" placeholder="搜索材料名称、英文名、分子式..." onkeydown="if(event.key==='Enter')window.loadMaterials()">
+    <input type="text" id="materialSearch" placeholder="搜索中文名或英文名" onkeydown="if(event.key==='Enter'){window.materialPage=1;window.loadMaterials()}">
     <select id="materialStatus" onchange="window.materialPage=1;window.loadMaterials()">
       <option value="">全部状态</option>
       <option value="initial">初始</option>
-      <option value="submitted">待审核</option>
+      <option value="submitted">已提交</option>
       <option value="recalculated">已重新计算</option>
     </select>
-    <label style="display:flex;align-items:center;gap:5px"><input type="checkbox" id="duplicateOnly" onchange="window.materialPage=1;window.loadMaterials()">只看重复</label>
-    <button class="btn btn-primary" onclick="window.loadMaterials()">🔍 搜索</button>
+    <button class="btn btn-primary" onclick="window.materialPage=1;window.loadMaterials()">搜索</button>
+    <button class="btn" onclick="window.showMaterialRecalculationLogs()">重算日志</button>
   </div>
 </div>
 
 <div class="card">
   <div class="config-toolbar">
     <h2 style="margin:0">材料列表</h2>
-    <div style="display:flex;gap:8px">
-      <button class="btn btn-sm" onclick="window.scanMaterialDuplicates()">扫描重复材料</button>
-      <button class="btn btn-sm" onclick="window.backfillMaterialLinks()">关联历史配料</button>
-      <button class="btn btn-sm btn-primary" onclick="window.autoMergeExactMaterials()">自动合并完全重复</button>
-      <button class="btn btn-sm" onclick="window.showMaterialMergeLogs()">合并记录</button>
-    </div>
+    <button class="btn btn-sm" onclick="window.loadMaterials()">刷新</button>
   </div>
   <table>
     <thead>
       <tr>
         <th>ID</th>
-        <th>名称</th>
-        <th>状态</th>
-        <th>变体</th>
-        <th>影响配方</th>
-        <th>来源</th>
+        <th>中文名 / 英文名</th>
+        <th>当前状态</th>
+        <th>影响的配方数</th>
+        <th>所属人</th>
         <th>操作</th>
       </tr>
     </thead>

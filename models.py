@@ -331,30 +331,16 @@ class TemperatureCone(Base):
     created_at = Column(DateTime(timezone=True), server_default=func.now())
 
 
-class MaterialFamily(Base):
-    """A generic material name containing one or more composition variants."""
-    __tablename__ = "material_families"
-    __table_args__ = {"mysql_collate": "utf8mb4_bin"}
-
-    id = Column(Integer, primary_key=True, index=True)
-    canonical_name = Column(String(200), nullable=False)
-    normalized_name = Column(String(200), nullable=False, unique=True, index=True)
-    default_material_id = Column(Integer, ForeignKey("materials.id", ondelete="SET NULL"), nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
-
 class Material(Base):
     """合并后的原材料统一表（本土+海外）"""
     __tablename__ = "materials"
 
     id = Column(Integer, primary_key=True, index=True)
-    family_id = Column(Integer, ForeignKey("material_families.id", ondelete="SET NULL"), nullable=True, index=True)
     user_id = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=True, index=True)
     name = Column(String(200), nullable=False, index=True)        # 中文名
     normalized_name = Column(String(200), default="", index=True)
-    variant_name = Column(String(200), default="")
     name_en = Column(String(200), default="")                      # 英文名
+    normalized_name_en = Column(String(200), default="", index=True)
     source = Column(String(20), default="")                        # 'local' 或 'overseas'
     source_id = Column(Integer, nullable=True)                     # 外部来源数据ID
     formula = Column(String(200), default="")                      # 分子式
@@ -388,10 +374,8 @@ class Material(Base):
     sort_order = Column(Integer, default=0)
     status = Column(String(20), nullable=False, default="recalculated", server_default="recalculated")
     created_from = Column(String(20), default="legacy")
+    # 仅用于保留历史已停用/已合并记录，不再提供合并或停用功能。
     is_active = Column(Boolean, nullable=False, default=True, server_default=text("1"))
-    merged_into_id = Column(Integer, ForeignKey("materials.id", ondelete="SET NULL"), nullable=True, index=True)
-    composition_fingerprint = Column(String(64), default="", index=True)
-    data_quality_status = Column(String(20), nullable=False, default="normal", server_default="normal")
     submitted_at = Column(DateTime(timezone=True), nullable=True)
     reviewed_at = Column(DateTime(timezone=True), nullable=True)
     reviewed_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
@@ -401,60 +385,19 @@ class Material(Base):
     updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
 
 
-class MaterialAlias(Base):
-    __tablename__ = "material_aliases"
-    __table_args__ = (
-        UniqueConstraint("normalized_alias", "material_id", name="uq_material_alias_variant"),
-        {"mysql_collate": "utf8mb4_bin"},
-    )
-
-    id = Column(Integer, primary_key=True, index=True)
-    family_id = Column(Integer, ForeignKey("material_families.id", ondelete="CASCADE"), nullable=False, index=True)
-    material_id = Column(Integer, ForeignKey("materials.id", ondelete="CASCADE"), nullable=True, index=True)
-    alias = Column(String(200), nullable=False)
-    normalized_alias = Column(String(200), nullable=False, index=True)
-    language = Column(String(20), default="")
-    source = Column(String(20), default="")
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-
-
-class MaterialRevision(Base):
-    """Pending user edits; approved material values remain untouched until review."""
-    __tablename__ = "material_revisions"
+class MaterialRecalculationLog(Base):
+    """One administrator-triggered Seger recalculation and its affected recipes."""
+    __tablename__ = "material_recalculation_logs"
 
     id = Column(Integer, primary_key=True, index=True)
     material_id = Column(Integer, ForeignKey("materials.id", ondelete="CASCADE"), nullable=False, index=True)
-    submitted_by = Column(Integer, ForeignKey("users.id", ondelete="CASCADE"), nullable=False, index=True)
-    payload_json = Column(Text, nullable=False, default="{}")
-    status = Column(String(20), nullable=False, default="initial", server_default="initial")
+    admin_id = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True, index=True)
+    affected_recipe_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    success_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    failed_count = Column(Integer, nullable=False, default=0, server_default=text("0"))
+    recipe_ids_json = Column(Text, nullable=False, default="[]")
+    failures_json = Column(Text, nullable=False, default="[]")
     created_at = Column(DateTime(timezone=True), server_default=func.now())
-    updated_at = Column(DateTime(timezone=True), server_default=func.now(), onupdate=func.now())
-
-
-class MaterialMergeLog(Base):
-    __tablename__ = "material_merge_logs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    source_material_id = Column(Integer, nullable=False, index=True)
-    target_material_id = Column(Integer, ForeignKey("materials.id", ondelete="RESTRICT"), nullable=False, index=True)
-    reason = Column(String(500), default="")
-    snapshot_json = Column(Text, nullable=False)
-    merged_by = Column(Integer, ForeignKey("users.id", ondelete="SET NULL"), nullable=True)
-    merged_at = Column(DateTime(timezone=True), server_default=func.now())
-    rolled_back_at = Column(DateTime(timezone=True), nullable=True)
-
-
-class SegerRecalculationJob(Base):
-    __tablename__ = "seger_recalculation_jobs"
-
-    id = Column(Integer, primary_key=True, index=True)
-    material_id = Column(Integer, ForeignKey("materials.id", ondelete="CASCADE"), nullable=False, index=True)
-    recipe_id = Column(Integer, ForeignKey("recipes.id", ondelete="CASCADE"), nullable=False, index=True)
-    status = Column(String(20), nullable=False, default="pending", server_default="pending")
-    attempts = Column(Integer, nullable=False, default=0, server_default=text("0"))
-    error_message = Column(Text, nullable=True)
-    created_at = Column(DateTime(timezone=True), server_default=func.now())
-    finished_at = Column(DateTime(timezone=True), nullable=True)
 
 
 class RecipeSeger(Base):

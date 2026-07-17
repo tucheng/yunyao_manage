@@ -16,12 +16,11 @@ MOLECULE_TEXT_FIELDS = ("name_en", "formula", "molecular_weight", "category")
 
 def catalog_payload(material: Material) -> dict:
     fields = (
-        "id", "family_id", "name", "normalized_name", "variant_name", "name_en", "source", "source_id", "formula",
+        "id", "name", "normalized_name", "name_en", "normalized_name_en", "source", "source_id", "formula",
         "molecular_weight", "category", "sio2", "al2o3", "fe2o3", "tio2",
         "cao", "mgo", "na2o", "k2o", "zno", "b2o3", "p2o5", "li2o",
         "mno2", "coo", "sno2", "cuo", "cr2o3", "pbo", "bao", "sro",
-        "loi", "thermal_expansion", "status", "created_from", "is_active",
-        "merged_into_id", "data_quality_status", "submitted_at", "reviewed_at",
+        "loi", "thermal_expansion", "status", "created_from", "submitted_at", "reviewed_at",
         "review_note", "recalculated_at",
     )
     result = {field: getattr(material, field, None) for field in fields}
@@ -43,16 +42,13 @@ def normalized_material_name(name: str) -> str:
     return normalize_material_name(name)
 
 
-def material_name_conflict(db: Session, name: str, exclude_id: int | None = None) -> Material | None:
-    normalized = normalized_material_name(name)
-    if not normalized:
-        return None
-    query = db.query(Material)
-    if exclude_id is not None:
-        query = query.filter(Material.id != exclude_id)
-    return next(
-        (material for material in query.all() if normalized_material_name(material.name) == normalized),
-        None,
+def material_name_conflict(
+    db: Session, name: str, name_en: str = "", exclude_id: int | None = None,
+) -> Material | None:
+    from services.material_analysis import find_material_name_conflict
+
+    return find_material_name_conflict(
+        db, name=name, name_en=name_en, exclude_id=exclude_id,
     )
 
 

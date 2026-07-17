@@ -514,21 +514,20 @@ def calculate_seger(recipe_id: int, db: Session) -> dict:
             if material:
                 matched_by = f"recipe_ingredients.material_id={material.id}"
 
-        # Historical rows without an explicit link use the reviewed family
-        # default. Ambiguous duplicate groups are intentionally not guessed.
+        # 历史配料没有 material_id 时，按中英文联合规范名匹配；只有一个名称时按该名称匹配。
         if not material:
             material, _ = resolve_material(
                 db, name=name, name_en=name_en, create_missing=False,
             )
             if material:
-                matched_by = f"material_family.default={material.id}"
+                matched_by = f"normalized_material_name={material.id}"
 
         if not material:
             unmatched_names.append(name)
             logger.warning("No material found for ingredient '%s'", name)
             continue
 
-        if material.status != 'recalculated' or material.data_quality_status in ('disabled', 'merged'):
+        if material.status != 'recalculated':
             pending_materials.append(name)
             logger.info("Material '%s' is pending review and was excluded", name)
             continue

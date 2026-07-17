@@ -1,4 +1,3 @@
-import json
 from datetime import datetime, timezone
 from typing import Optional
 
@@ -7,7 +6,7 @@ from sqlalchemy import case, func, or_
 from sqlalchemy.orm import Session
 from database import get_db
 from auth_utils import current_user
-from models import Material, MaterialRevision, MaterialSubstitution, RecipeIngredient, UserMaterial
+from models import Material, MaterialSubstitution, RecipeIngredient, UserMaterial
 from services.material_similarity import (
     TOP_SIMILAR_MATERIALS,
     material_similarity,
@@ -30,18 +29,6 @@ router = APIRouter(prefix="/materials", tags=["材料库"])
 
 def _molecule_payload(db: Session, material: Material) -> dict:
     result = _catalog_payload(material)
-    revision = db.query(MaterialRevision).filter(
-        MaterialRevision.material_id == material.id,
-        MaterialRevision.status.in_(("initial", "submitted")),
-    ).order_by(MaterialRevision.id.desc()).first()
-    if revision:
-        draft = _clean_molecule_data(json.loads(revision.payload_json or "{}"), partial=True)
-        result["draft"] = draft
-        result["draft_status"] = revision.status
-        result.update(draft)
-    else:
-        result["draft"] = None
-        result["draft_status"] = ""
     result["affected_recipe_count"] = db.query(func.count(func.distinct(RecipeIngredient.recipe_id))).filter(
         RecipeIngredient.material_id == material.id,
     ).scalar() or 0
@@ -82,8 +69,8 @@ def list_my_material_molecules(
 def create_material_molecule(data: dict, request: Request, db: Session = Depends(get_db)):
     user_id = _request_user_id(request)
     cleaned = _clean_molecule_data(data)
-    if _material_name_conflict(db, cleaned["name"]):
-        raise HTTPException(status_code=409, detail="材料名已存在（忽略空白后不可重名）")
+    if _material_name_conflict(db, cleaned["name"], cleaned.get("name_en", "")):
+        raise HTTPException(status_code=409, detail="中英文材料名组合已存在（忽略空白）")
     material = Material(
         user_id=user_id,
         source="user",
@@ -97,13 +84,6 @@ def create_material_molecule(data: dict, request: Request, db: Session = Depends
     db.add(material)
     db.flush()
     prepare_material(db, material)
-    revision = MaterialRevision(
-        material_id=material.id,
-        submitted_by=user_id,
-        payload_json=json.dumps(cleaned, ensure_ascii=False),
-        status="initial",
-    )
-    db.add(revision)
     db.commit()
     db.refresh(material)
     return _molecule_payload(db, material)
@@ -126,22 +106,13 @@ def update_material_molecule(
     if material.status == "submitted":
         raise HTTPException(status_code=409, detail="材料正在等待管理员审核，暂不能修改")
     cleaned = _clean_molecule_data(data, partial=True)
-    if "name" in cleaned and _material_name_conflict(db, cleaned["name"], exclude_id=material.id):
-        raise HTTPException(status_code=409, detail="材料名已存在（忽略空白后不可重名）")
-    revision = db.query(MaterialRevision).filter(
-        MaterialRevision.material_id == material.id,
-        MaterialRevision.status.in_(("initial", "submitted")),
-    ).order_by(MaterialRevision.id.desc()).first()
-    draft = (
-        _clean_molecule_data(json.loads(revision.payload_json or "{}"), partial=True)
-        if revision else _clean_molecule_data(_catalog_payload(material), partial=True)
-    )
-    draft.update(cleaned)
-    if not revision:
-        revision = MaterialRevision(material_id=material.id, submitted_by=user_id, status="initial")
-        db.add(revision)
-    revision.payload_json = json.dumps(draft, ensure_ascii=False, default=str)
-    revision.status = "initial"
+    final_name = cleaned.get("name", material.name)
+    final_name_en = cleaned.get("name_en", material.name_en or "")
+    if _material_name_conflict(db, final_name, final_name_en, exclude_id=material.id):
+        raise HTTPException(status_code=409, detail="中英文材料名组合已存在（忽略空白）")
+    for field, value in cleaned.items():
+        setattr(material, field, value)
+    prepare_material(db, material)
     material.status = "initial"
     material.submitted_at = None
     material.review_note = None
@@ -156,20 +127,14 @@ def submit_material_molecule(material_id: int, request: Request, db: Session = D
     material = db.query(Material).filter(Material.id == material_id, Material.user_id == user_id).first()
     if not material:
         raise HTTPException(status_code=404, detail="材料不存在或无权提交")
-    revision = db.query(MaterialRevision).filter(
-        MaterialRevision.material_id == material.id,
-        MaterialRevision.status == "initial",
-    ).order_by(MaterialRevision.id.desc()).first()
-    if not revision:
-        raise HTTPException(status_code=409, detail="请先保存材料分子数据")
-    payload = json.loads(revision.payload_json or "{}")
-    if not any(payload.get(field) not in (None, "", 0, 0.0) for field in (
+    if material.status != "initial":
+        raise HTTPException(status_code=409, detail="当前状态不能重复提交")
+    if not any(getattr(material, field, None) not in (None, "", 0, 0.0) for field in (
         "sio2", "al2o3", "fe2o3", "tio2", "cao", "mgo", "na2o", "k2o",
         "zno", "b2o3", "p2o5", "li2o", "mno2", "coo", "sno2", "cuo",
         "cr2o3", "pbo", "bao", "sro",
     )):
         raise HTTPException(status_code=400, detail="至少填写一种有效氧化物后才能提交")
-    revision.status = "submitted"
     material.status = "submitted"
     material.submitted_at = datetime.now(timezone.utc)
     material.review_note = None
