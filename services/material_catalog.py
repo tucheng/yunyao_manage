@@ -4,6 +4,7 @@ from fastapi import HTTPException, Request
 from sqlalchemy.orm import Session
 
 from models import Material
+from seger_calculator import OXIDE_MW
 from services.material_analysis import normalize_material_name
 
 MOLECULE_FLOAT_FIELDS = (
@@ -12,6 +13,50 @@ MOLECULE_FLOAT_FIELDS = (
     "cr2o3", "pbo", "bao", "sro", "loi", "thermal_expansion",
 )
 MOLECULE_TEXT_FIELDS = ("name_en", "formula", "molecular_weight", "category")
+OXIDE_FORMULAS = {
+    "sio2": "SiO2", "al2o3": "Al2O3", "fe2o3": "Fe2O3", "tio2": "TiO2",
+    "cao": "CaO", "mgo": "MgO", "na2o": "Na2O", "k2o": "K2O",
+    "zno": "ZnO", "b2o3": "B2O3", "p2o5": "P2O5", "li2o": "Li2O",
+    "mno2": "MnO2", "coo": "CoO", "sno2": "SnO2", "cuo": "CuO",
+    "cr2o3": "Cr2O3", "pbo": "PbO", "bao": "BaO", "sro": "SrO",
+}
+
+
+def derive_molecular_properties(values) -> tuple[str, str]:
+    """Derive a normalized oxide formula and effective molar mass from weight percentages."""
+    get_value = values.get if isinstance(values, dict) else lambda field: getattr(values, field, None)
+    components = []
+    total_mass = 0.0
+    total_moles = 0.0
+    for field, molecular_weight in OXIDE_MW.items():
+        try:
+            mass = float(get_value(field) or 0)
+        except (TypeError, ValueError):
+            continue
+        if not math.isfinite(mass) or mass <= 0:
+            continue
+        moles = mass / molecular_weight
+        components.append((field, moles))
+        total_mass += mass
+        total_moles += moles
+    if not components or total_moles <= 0:
+        return "", ""
+
+    formula_parts = []
+    formula_length = 0
+    for field, moles in components:
+        coefficient = moles / total_moles
+        coefficient_text = f"{coefficient:.3f}".rstrip("0").rstrip(".")
+        part = OXIDE_FORMULAS[field] if coefficient_text == "1" else f"{coefficient_text}{OXIDE_FORMULAS[field]}"
+        added_length = len(part) + (1 if formula_parts else 0)
+        if formula_length + added_length > 200:
+            break
+        formula_parts.append(part)
+        formula_length += added_length
+
+    effective_weight = total_mass / total_moles
+    molecular_weight_text = f"{effective_weight:.4f}".rstrip("0").rstrip(".")
+    return "·".join(formula_parts), molecular_weight_text
 
 
 def catalog_payload(material: Material) -> dict:

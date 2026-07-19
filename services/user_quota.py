@@ -12,10 +12,29 @@ from services.business_errors import QuotaExceeded
 TRIAL_LEVEL_ID = 1
 NORMAL_LEVEL_ID = 2
 MEMBER_LEVEL_ID = 3
+SYSTEM_LEVEL_DEFAULTS = {
+    TRIAL_LEVEL_ID: {
+        "name": "会员试用者",
+        "max_recipes": 10,
+        "max_works": 50,
+        "max_views": 10,
+    },
+    NORMAL_LEVEL_ID: {
+        "name": "普通用户",
+        "max_recipes": 1,
+        "max_works": 50,
+        "max_views": 5,
+    },
+    MEMBER_LEVEL_ID: {
+        "name": "会员用户",
+        "max_recipes": 50,
+        "max_works": 100,
+        "max_views": 100,
+    },
+}
 SYSTEM_LEVEL_NAMES = {
-    TRIAL_LEVEL_ID: "会员试用者",
-    NORMAL_LEVEL_ID: "普通用户",
-    MEMBER_LEVEL_ID: "会员用户",
+    level_id: defaults["name"]
+    for level_id, defaults in SYSTEM_LEVEL_DEFAULTS.items()
 }
 
 QuotaKind = Literal["recipe", "work", "recipe_view"]
@@ -44,13 +63,14 @@ _QUOTA_LABEL = {
 
 
 def ensure_system_levels(db: Session) -> None:
-    """只保证三个业务固定等级存在并保持固定名称，不处理其他测试等级。"""
-    for level_id, name in SYSTEM_LEVEL_NAMES.items():
+    """Create the three fixed business levels with their initial quota values."""
+    for level_id, defaults in SYSTEM_LEVEL_DEFAULTS.items():
         level = db.query(UserLevel).filter(UserLevel.id == level_id).first()
         if level is None:
-            db.add(UserLevel(id=level_id, name=name, sort_order=level_id))
-        elif level.name != name:
-            level.name = name
+            db.add(UserLevel(id=level_id, sort_order=level_id, **defaults))
+        elif level.name != defaults["name"]:
+            # Names and IDs are business constants. Quotas remain administrator-editable.
+            level.name = defaults["name"]
     db.flush()
 
 

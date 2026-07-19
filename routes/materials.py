@@ -14,6 +14,7 @@ from services.material_similarity import (
 from services.material_catalog import (
     catalog_payload as _catalog_payload,
     clean_molecule_data as _clean_molecule_data,
+    derive_molecular_properties as _derive_molecular_properties,
     material_name_conflict as _material_name_conflict,
     request_user_id as _request_user_id,
 )
@@ -43,6 +44,10 @@ def _has_oxide_data(values) -> bool:
         except (TypeError, ValueError):
             continue
     return False
+
+
+def _generate_molecular_properties(material: Material) -> None:
+    material.formula, material.molecular_weight = _derive_molecular_properties(material)
 
 
 def _molecule_payload(db: Session, material: Material) -> dict:
@@ -87,6 +92,8 @@ def list_my_material_molecules(
 def create_material_molecule(data: dict, request: Request, db: Session = Depends(get_db)):
     user_id = _request_user_id(request)
     cleaned = _clean_molecule_data(data)
+    for generated_field in ("category", "formula", "molecular_weight"):
+        cleaned.pop(generated_field, None)
     if not _has_oxide_data(cleaned):
         raise HTTPException(status_code=400, detail="至少填写一种有效氧化物后才能保存")
     if _material_name_conflict(db, cleaned["name"], cleaned.get("name_en", "")):
@@ -103,6 +110,7 @@ def create_material_molecule(data: dict, request: Request, db: Session = Depends
     )
     db.add(material)
     db.flush()
+    _generate_molecular_properties(material)
     prepare_material(db, material)
     db.commit()
     db.refresh(material)
@@ -126,6 +134,8 @@ def update_material_molecule(
     if material.status == "submitted":
         raise HTTPException(status_code=409, detail="材料正在等待管理员审核，暂不能修改")
     cleaned = _clean_molecule_data(data, partial=True)
+    for generated_field in ("category", "formula", "molecular_weight"):
+        cleaned.pop(generated_field, None)
     final_name = cleaned.get("name", material.name)
     final_name_en = cleaned.get("name_en", material.name_en or "")
     if _material_name_conflict(db, final_name, final_name_en, exclude_id=material.id):
@@ -134,6 +144,7 @@ def update_material_molecule(
         setattr(material, field, value)
     if not _has_oxide_data(material):
         raise HTTPException(status_code=400, detail="至少填写一种有效氧化物后才能保存")
+    _generate_molecular_properties(material)
     prepare_material(db, material)
     material.status = "modified"
     material.submitted_at = None
@@ -153,6 +164,7 @@ def submit_material_molecule(material_id: int, request: Request, db: Session = D
         raise HTTPException(status_code=409, detail="当前状态不能重复提交")
     if not _has_oxide_data(material):
         raise HTTPException(status_code=400, detail="至少填写一种有效氧化物后才能提交")
+    _generate_molecular_properties(material)
     material.status = "submitted"
     material.submitted_at = datetime.now(timezone.utc)
     material.review_note = None

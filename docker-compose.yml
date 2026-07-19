@@ -11,12 +11,12 @@ services:
     image: redis:7.4.3-alpine
     restart: unless-stopped
     cpus: 0.50
-    mem_limit: 384m
+    mem_limit: 160m
     pids_limit: 128
     read_only: true
     security_opt: ["no-new-privileges:true"]
-    tmpfs: ["/tmp:rw,noexec,nosuid,size=32m"]
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory-policy", "allkeys-lru"]
+    tmpfs: ["/tmp:rw,noexec,nosuid,size=16m"]
+    command: ["redis-server", "--appendonly", "yes", "--appendfsync", "everysec", "--maxmemory", "96mb", "--maxmemory-policy", "allkeys-lru"]
     volumes:
       - redis_data:/data
     healthcheck:
@@ -28,8 +28,8 @@ services:
   db:
     image: mysql:8.4.10
     restart: unless-stopped
-    cpus: 1.50
-    mem_limit: 1536m
+    cpus: 1.00
+    mem_limit: 640m
     pids_limit: 256
     read_only: true
     security_opt: ["no-new-privileges:true"]
@@ -45,56 +45,12 @@ services:
     command: ["--character-set-server=utf8mb4", "--collation-server=utf8mb4_unicode_ci"]
     volumes:
       - mysql_data:/var/lib/mysql
+      - ./deploy/mysql-low-memory.cnf:/etc/mysql/conf.d/yunyao-low-memory.cnf:ro
     healthcheck:
       test: ["CMD-SHELL", "mysqladmin ping -h 127.0.0.1 -uroot -p$$MYSQL_ROOT_PASSWORD --silent"]
       interval: 10s
       timeout: 5s
       retries: 12
-
-  minio:
-    image: minio/minio:RELEASE.2025-09-07T16-13-09Z
-    restart: unless-stopped
-    cpus: 1.00
-    mem_limit: 768m
-    pids_limit: 192
-    read_only: true
-    security_opt: ["no-new-privileges:true"]
-    tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
-    command: server /data --console-address :9001
-    environment:
-      MINIO_ROOT_USER: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID}
-      MINIO_ROOT_PASSWORD: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY}
-    volumes:
-      - minio_data:/data
-  minio-init:
-    image: minio/mc:RELEASE.2025-07-21T05-28-08Z
-    cpus: 0.25
-    mem_limit: 128m
-    pids_limit: 64
-    read_only: true
-    security_opt: ["no-new-privileges:true"]
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=16m
-      - /root/.mc:rw,noexec,nosuid,size=16m
-    depends_on:
-      minio:
-        condition: service_started
-    entrypoint: ["/bin/sh", "-c"]
-    command:
-      - >-
-        until mc alias set local http://minio:9000 "$${S3_ACCESS_KEY_ID}" "$${S3_SECRET_ACCESS_KEY}"; do sleep 2; done &&
-        mc mb --ignore-existing "local/$${S3_BUCKET}" &&
-        mc mb --ignore-existing "local/$${S3_PRIVATE_BUCKET}" &&
-        mc version enable "local/$${S3_BUCKET}" &&
-        mc version enable "local/$${S3_PRIVATE_BUCKET}" &&
-        mc anonymous set download "local/$${S3_BUCKET}" &&
-        mc anonymous set none "local/$${S3_PRIVATE_BUCKET}"
-    environment:
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY}
-      S3_BUCKET: ${S3_BUCKET:-yunyao-uploads}
-      S3_PRIVATE_BUCKET: ${S3_PRIVATE_BUCKET:-yunyao-private}
-    restart: "no"
 
   api:
     image: ${API_IMAGE:-yunyao-api:local}
@@ -103,7 +59,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     cpus: 1.00
-    mem_limit: 768m
+    mem_limit: 512m
     pids_limit: 256
     read_only: true
     security_opt: ["no-new-privileges:true"]
@@ -114,7 +70,7 @@ services:
       APP_ENV: production
       DATABASE_URL: ${DATABASE_URL:?set DATABASE_URL}
       STORAGE_BACKEND: s3
-      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:-http://minio:9000}
+      S3_ENDPOINT_URL: ${S3_ENDPOINT_URL:?set cloud S3-compatible endpoint}
       S3_PUBLIC_BASE_URL: ${S3_PUBLIC_BASE_URL:?set S3_PUBLIC_BASE_URL}
       S3_PRIVATE_BUCKET: ${S3_PRIVATE_BUCKET:?set S3_PRIVATE_BUCKET}
       LOG_TO_FILE: "0"
@@ -124,8 +80,6 @@ services:
       - smtp_password
     depends_on:
       migrate:
-        condition: service_completed_successfully
-      minio-init:
         condition: service_completed_successfully
       redis:
         condition: service_healthy
@@ -208,33 +162,6 @@ services:
     security_opt: ["no-new-privileges:true"]
     tmpfs: ["/tmp:rw,noexec,nosuid,size=64m"]
 
-  object-backup:
-    image: minio/mc:RELEASE.2025-07-21T05-28-08Z
-    profiles: ["backups"]
-    restart: unless-stopped
-    entrypoint: ["/bin/sh", "/opt/backup/object-backup.sh"]
-    environment:
-      S3_ENDPOINT_URL: http://minio:9000
-      S3_ACCESS_KEY_ID: ${S3_ACCESS_KEY_ID:?set S3_ACCESS_KEY_ID}
-      S3_SECRET_ACCESS_KEY: ${S3_SECRET_ACCESS_KEY:?set S3_SECRET_ACCESS_KEY}
-      S3_BUCKETS: ${S3_BUCKET:-yunyao-uploads} ${S3_PRIVATE_BUCKET:-yunyao-private}
-      BACKUP_INTERVAL_SECONDS: ${BACKUP_INTERVAL_SECONDS:-86400}
-      BACKUP_RETENTION_DAYS: ${BACKUP_RETENTION_DAYS:-14}
-    volumes:
-      - ./deploy/backup:/opt/backup:ro
-      - backup_data:/backups
-    depends_on:
-      minio-init:
-        condition: service_completed_successfully
-    cpus: 0.50
-    mem_limit: 384m
-    pids_limit: 96
-    read_only: true
-    security_opt: ["no-new-privileges:true"]
-    tmpfs:
-      - /tmp:rw,noexec,nosuid,size=64m
-      - /root/.mc:rw,noexec,nosuid,size=16m
-
   bootstrap-admin:
     build:
       context: .
@@ -263,7 +190,7 @@ services:
       dockerfile: Dockerfile
     restart: unless-stopped
     cpus: 0.50
-    mem_limit: 256m
+    mem_limit: 128m
     pids_limit: 128
     read_only: true
     security_opt: ["no-new-privileges:true"]
@@ -276,7 +203,7 @@ services:
     image: nginx:1.28.0-alpine
     restart: unless-stopped
     cpus: 0.50
-    mem_limit: 256m
+    mem_limit: 128m
     pids_limit: 128
     read_only: true
     security_opt: ["no-new-privileges:true"]
@@ -299,6 +226,5 @@ services:
 
 volumes:
   mysql_data:
-  minio_data:
   redis_data:
   backup_data:

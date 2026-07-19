@@ -4,7 +4,7 @@
 
 1. 前端 `frontend-ci` 与后端 `backend-ci` 必须是分支保护的 required checks。
 2. 生产镜像变量使用不可变 digest，例如 `API_IMAGE=registry/yunyao-api@sha256:...`，禁止 `latest`。
-3. 启动 `backups` profile，并把 `backup_data` 卷复制到异机或云端加密存储；同机副本不算灾备。
+3. 启动 `backups` profile 的 MySQL 备份，并把 `backup_data` 卷复制到异机或云端加密存储；对象存储必须启用版本控制和跨区域复制，同机副本不算灾备。
 4. Prometheus 抓取 API 容器的 `/metrics`，告警至少覆盖：5xx、P95/P99 延迟、慢 SQL、验证码失败率、上传失败率、实例存活和备份超时。
 5. 配置 Sentry DSN 或兼容服务，发布版本号随镜像注入。
 
@@ -27,10 +27,10 @@ python scripts/migrate_uploads_to_s3.py --execute --manifest uploads-migration-m
 ## 自动备份与恢复演练
 
 ```sh
-docker compose --profile backups up -d mysql-backup object-backup
+docker compose --profile backups up -d mysql-backup
 ```
 
-默认每日备份、保留 14 天。用 `BACKUP_INTERVAL_SECONDS` 和 `BACKUP_RETENTION_DAYS` 调整。每周检查新备份时间、大小、校验文件，并把备份卷异地复制。
+默认每日备份、保留 14 天。用 `BACKUP_INTERVAL_SECONDS` 和 `BACKUP_RETENTION_DAYS` 调整。每周检查新备份时间、大小、校验文件，并把备份卷异地复制。云 OSS 的对象恢复通过厂商版本控制和跨区域副本演练，不再下载到本机备份卷。
 
 数据库恢复只能写入以 `_restore_drill` 结尾的临时库：
 
@@ -42,17 +42,8 @@ docker compose --profile backups run --rm \
   --entrypoint /opt/backup/mysql-restore-drill.sh mysql-backup
 ```
 
-对象恢复只能写入以 `-restore-drill` 结尾的临时桶：
-
-```sh
-docker compose --profile backups run --rm \
-  -e CONFIRM_RESTORE_DRILL=yes \
-  -e RESTORE_BUCKET=yunyao-uploads-restore-drill \
-  -e BACKUP_PATH=/backups/objects/yunyao-uploads-TIMESTAMP \
-  --entrypoint /opt/backup/object-restore-drill.sh object-backup
-```
-
-每月至少演练一次，并记录 RPO（最近可恢复点）与 RTO（恢复耗时）。
+每月通过云厂商控制台把指定历史版本或跨区域副本恢复到以
+`-restore-drill` 结尾的临时桶，并记录 RPO（最近可恢复点）与 RTO（恢复耗时）。
 
 ## 数据库迁移与回滚
 

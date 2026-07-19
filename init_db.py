@@ -3,15 +3,18 @@
 运行：python init_db.py
 
 初始化预置数据：
+  - 系统材料目录（Material）
   - 作品属性可选值（WorkAttributeOption）
   - 验证码配置默认值（AppSetting）
 """
 import sys
 import os
+import json
+from pathlib import Path
 sys.path.insert(0, os.path.dirname(__file__))
 
 from database import SessionLocal
-from models import WorkAttributeOption, AppSetting
+from models import WorkAttributeOption, AppSetting, Material
 from services.user_quota import ensure_system_levels
 from app_config import (
     SMTP_FROM,
@@ -22,6 +25,8 @@ from app_config import (
     VERIFICATION_CHANNEL,
 )
 from sqlalchemy import text
+
+MATERIALS_SEED_PATH = Path(__file__).with_name("seed_data") / "materials.json"
 
 # ===== 预置数据 =====
 
@@ -98,6 +103,21 @@ def init_work_attributes(db) -> int:
     return total
 
 
+def init_materials(db) -> int:
+    """Initialize the shared material catalog without touching an existing catalog."""
+    if db.query(Material.id).first() is not None:
+        return 0
+
+    with MATERIALS_SEED_PATH.open(encoding="utf-8") as seed_file:
+        materials = json.load(seed_file)
+    if not isinstance(materials, list):
+        raise ValueError("materials seed data must be a JSON list")
+
+    db.bulk_insert_mappings(Material, materials)
+    db.commit()
+    return len(materials)
+
+
 def init_verification_settings(db) -> int:
     """初始化验证码配置，已有则跳过"""
     count = db.query(AppSetting).filter(AppSetting.key == "verification_settings").count()
@@ -131,6 +151,10 @@ def main():
         ensure_system_levels(db)
         db.commit()
         results.append("系统用户等级: 已初始化")
+        n = init_materials(db)
+        if n:
+            results.append(f"材料目录: {n} 条")
+
         n = init_work_attributes(db)
         if n:
             results.append(f"作品属性选项: {n} 条")

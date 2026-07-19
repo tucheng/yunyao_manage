@@ -94,12 +94,15 @@ class ReverseProxySecurityTests(unittest.TestCase):
         self.assertIn("${TLS_KEY_FILE:?set TLS_KEY_FILE}", compose)
         self.assertIn("${HTTPS_PORT:-443}:443", compose)
 
-    def test_compose_separates_private_complaint_storage_and_mounts_smtp_secret(self):
+    def test_compose_uses_cloud_object_storage_and_mounts_smtp_secret(self):
         root = Path(__file__).resolve().parents[1]
         compose = (root / "docker-compose.yml").read_text(encoding="utf-8")
         nginx = (root / "deploy" / "nginx.conf").read_text(encoding="utf-8")
-        self.assertIn("S3_PRIVATE_BUCKET", compose)
-        self.assertIn('mc anonymous set none "local/$${S3_PRIVATE_BUCKET}"', compose)
+        self.assertIn("${S3_ENDPOINT_URL:?set cloud S3-compatible endpoint}", compose)
+        self.assertIn("${S3_PRIVATE_BUCKET:?set S3_PRIVATE_BUCKET}", compose)
+        self.assertIn("${S3_PUBLIC_BASE_URL:?set S3_PUBLIC_BASE_URL}", compose)
+        self.assertNotIn("minio:", compose)
+        self.assertNotIn("object_storage", nginx)
         self.assertIn("smtp_password:", compose)
         self.assertIn("bootstrap-admin:", compose)
         self.assertIn("complaint-media", nginx)
